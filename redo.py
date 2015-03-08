@@ -31,41 +31,29 @@ class CThread (threading.Thread):
             try:
                 (stdout,stderr) = p.communicate()
                 if stdout == None or stderr == None:
+                    #Does this ever happen?? 
                     print "Communicate process is dead..."
-                    p.kill()
+                    #Cleanly kill the subprocess
+                    p.poll()
+                    if p.returnid is not None:
+                        p.kill()
                     thread.exit()
                     print "Communicate unreachable..."
             except: #Communicate throws an exception if the subprocess dies
                 thread.exit()
 
+            #Ouput our illgotten gains
             self.parent.log(stdout, tostdout=self.tostdout)
             self.parent.log(stderr, tostdout=self.tostdout)
             if self.returnout: self.result.put(stdout) 
             if self.returnout: self.result.put(stderr) 
                 
-
-#            line = p.stdout.readline()                
-#            if line == "": #Readline got nothing, the process is dead
-#                print "STDOUT process is dead..."
-#                p.kill()
-#                thread.exit()
-#                print "STDOUT unreachable..."
-#            self.parent.log(line, tostdout=self.tostdout)
-#            if self.returnout: self.result.put(line) 
-#        
-#            line = p.stderr.readline()                
-#            if line == "" : #Readline got nothing, the process is dead
-#                print "STDERR: process is dead.."
-#                p.kill()
-#                thread.exit()
-#                print "STDERR: Unreaachable..."
-#            self.parent.log(line, tostdout=self.tostdout)
-#            if self.returnout: self.result.put(line) 
-
-
         def __del__(self):
+            #Does this even work? Have never seen it happen
             print "Got the delete signal"
-            p.kill()
+            p.poll()
+            if p.returnid is not None:
+                p.kill()
             thread.exit()
 
 
