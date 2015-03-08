@@ -169,8 +169,24 @@ class Host:
         return self.pid2thread[pid].isAlive()
 
     #Wait on a command on a remote host finishing
-    def wait(self,pid, timeout):
-        return -1 
+    def wait(self, pid, timeout=None, kill=False):
+        procthread = self.pid2thread[pid]
+        #Wait for the thread to start up if it hasn't
+        while(procthread.subproc is None):
+            None
+        print "Waiting for thread to th pid %s terminate..." % (pid)
+        procthread.join(timeout)                       
+        if procthread.isAlive():
+            if not kill:
+                return None #Timedout, and not going to kill
+
+            print "Killing subprocess after timeout..."
+            procthread.kill_subproc()
+            print "Waiting for thread to die..."
+            procthread.join()
+            print "Thread and process is dead"
+            
+        return procthread.subproc.returncode
 
 
     #Stop the remote process by sending a signal
@@ -218,12 +234,12 @@ class Host:
     def __del__(self):
         print "Destroying host %s" % self.name
         for pid in self.pid2thread:
-            thread = pid2thread[pid]
-            if thread.isAlive():
+            procthread = pid2thread[pid]
+            if procthread.isAlive():
                 print "Killing thread in destructor..."
-                
+                peocthread.kill_subproc() 
                 print "Waiting for thread to die..."
-                ssh_thread.join()
+                procthread.join()
                 print "Thread is dead"
          
 
@@ -238,67 +254,35 @@ class Hosts:
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
     def run(self, cmd, timeout=-1,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
-        results = []
-        for host in self.hostlist:
-            result = host.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)
-            results.append(result)
-        return results
+        return map( (lambda host: host.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)), self.hostlist)
+        
 
     def getoutput(self,pid, block=False, timeout=None):
-        results = []
-        for host in self.hostlist:
-            result = host.getoutput(pid, block=block, timeout=timeout)
-            results.append(result)
-        return results
+        return map( (lambda host: host.getoutput(pid,block,timeout)), self.hostlist)
 
     #Wait on a command on a remote host finishing
-    def wait(self,pid, timeout):
-        results = []
-        for host in self.hostlist:
-            result = host.wait(pid,timeout)
-            results.append(result)
-        return results
-
+    def wait(self,pid, timeout=None, kill=False):
+        return map( (lambda host: host.wait(pid,timeout,kill)), self.hostlist)
 
     #Stop the remote process by sending a signal
     def kill(self,pid):
-        results = []
-        for host in self.hostlist:
-            result = host.kill(pid)
-            results.append(result)
-        return results
-
+        return map( (lambda host: host.kill(pid)), self.hostlist)
          
     #Copy data to the remote host with scp
     def copy_to(self,src,dst):
-        results = []
-        for host in self.hostlist:
-            result = host.copy_to(src,dst)
-            results.append(result)
-        return results
-
+        return map( (lambda host: host.copy_to(src,dst)), self.hostlist)
 
     #Copy data from the remote host with scp
     def copy_from(self,src,dst):
-        results = []
-        for host in self.hostlist:
-            result = host.wait(pid,src,dst)
-            results.append(result)
-        return results
-
+        return map( (lambda host: host.copy_from(pid,src,dst)), self.hostlist)
 
     #Use rysnc to minimise copying
     def sync_to(self, src, dst):
-        results = []
-        for host in self.hostlist:
-            result = host.sync_to(pid,src,dst)
-            results.append(result)
-        return results
-
+        return map( (lambda host: host.sync_to(pid,src,dst)), self.hostlist)
 
     #Use rsync to minimise copying 
     def sync_from(self,src,dst):
-        return -1
+        return map( (lambda host: host.sync_from(pid,src,dst)), self.hostlist)
 
     #Nice string representation    
     def __str__(self):
@@ -309,12 +293,7 @@ class Hosts:
         return str(self.hostlist)
 
     def debug(self):
-        results = []
-        for host in self.hostlist:
-            result = host.debug()
-            results.append(result)
-        return results        
-
+        return map( (lambda host: host.debug()), self.hostlist)
 
 class Redo:
     def __init__(self, hostnames, unames):
@@ -326,7 +305,7 @@ class Redo:
             self.hosts = [ Host(host,uname) for host,uname in zip(hostnames,unames) ]
         else:
             self.hosts = [ Host(host,unames) for host in hostnames ]
-       
+
     #Get a range of hosts
     def gethosts(self, start, stop):
         result = []
@@ -383,3 +362,41 @@ class Redo:
 
     def __len__(self):
         return len(self.hosts)
+
+    #Run a command on a remote host return a pid for the command
+    #cmd:       Text string of the command to run
+    #timeout:   Time in seconds to wait for the command to run, otherwise kill it
+    #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
+    #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
+    def run(self, cmd, timeout=-1,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+        return map( (lambda host: host.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)), self.hosts)
+        
+
+    def getoutput(self,pid, block=False, timeout=None):
+        return map( (lambda host: host.getoutput(pid,block,timeout)), self.hosts)
+
+    #Wait on a command on a remote host finishing
+    def wait(self,pid, timeout=None, kill=False):
+        return map( (lambda host: host.wait(pid,timeout,kill)), self.hosts)
+
+    #Stop the remote process by sending a signal
+    def kill(self,pid):
+        return map( (lambda host: host.kill(pid)), self.hosts)
+         
+    #Copy data to the remote host with scp
+    def copy_to(self,src,dst):
+        return map( (lambda host: host.copy_to(src,dst)), self.hosts)
+
+    #Copy data from the remote host with scp
+    def copy_from(self,src,dst):
+        return map( (lambda host: host.copy_from(pid,src,dst)), self.hosts)
+
+    #Use rysnc to minimise copying
+    def sync_to(self, src, dst):
+        return map( (lambda host: host.sync_to(pid,src,dst)), self.hosts)
+
+    #Use rsync to minimise copying 
+    def sync_from(self,src,dst):
+        return map( (lambda host: host.sync_from(pid,src,dst)), self.hosts)
+
+
