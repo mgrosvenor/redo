@@ -5,11 +5,76 @@ import sys
 import os
 import subprocess
 import datetime
+import thread
+import threading
+import Queue
+import fcntl
+import select
+import time
+
+#This is a giant work arount the completely brain dead subprocess stdin/stdout/communicate behaviour
+class CThread (threading.Thread):
+    def __init__(self, parent, cmd, returnout, result, tostdout):
+        threading.Thread.__init__(self)
+        self.parent     = parent
+        self.result     = result
+        self.cmd        = cmd
+        self.returnout  = returnout
+        self.tostdout   = tostdout
+        self.daemon     = False
+        self.subproc    = None
+
+    def run(self):
+        p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.subproc = p
+        while True:
+            try:
+                (stdout,stderr) = p.communicate()
+                if stdout == None or stderr == None:
+                    print "Communicate process is dead..."
+                    p.kill()
+                    thread.exit()
+                    print "Communicate unreachable..."
+            except: #Communicate throws an exception if the subprocess dies
+                thread.exit()
+
+            self.parent.log(stdout, tostdout=self.tostdout)
+            self.parent.log(stderr, tostdout=self.tostdout)
+            if self.returnout: self.result.put(stdout) 
+            if self.returnout: self.result.put(stderr) 
+                
+
+#            line = p.stdout.readline()                
+#            if line == "": #Readline got nothing, the process is dead
+#                print "STDOUT process is dead..."
+#                p.kill()
+#                thread.exit()
+#                print "STDOUT unreachable..."
+#            self.parent.log(line, tostdout=self.tostdout)
+#            if self.returnout: self.result.put(line) 
+#        
+#            line = p.stderr.readline()                
+#            if line == "" : #Readline got nothing, the process is dead
+#                print "STDERR: process is dead.."
+#                p.kill()
+#                thread.exit()
+#                print "STDERR: Unreaachable..."
+#            self.parent.log(line, tostdout=self.tostdout)
+#            if self.returnout: self.result.put(line) 
+
+
+        def __del__(self):
+            print "Got the delete signal"
+            p.kill()
+            thread.exit()
 
 
 #Defines a remote host
 class Host:
     def __init__(self, name,uname,logging = True):
+        self.pidcount    = -1
+        self.pid2thread  = {} #maps PIDs to threads
+        
         self.name        = name
         self.uname       = uname
         #Populating these should be ported to some general infrastructure at some point
@@ -19,22 +84,25 @@ class Host:
         self.disk_space  = -1
         self.pinned_cpus = -1
         self.free_cpus   = -1
-
+            
         self.logging = logging
         if logging:
-            self.logfilename  = "/tmp/redo_name"
+            self.logfilename  = "/tmp/redo_%s.log" % self.name
             self.logfile      = open(self.logfilename,"w")
 
+    def makepid(self):
+        self.pidcount += 1
+        return "%s-%s" % (self.name,self.pidcount)
 
     #(optionaly) Make pretty logs of everything that we do
-    def log(self,msg,stdout=True,stderr=False, timestamp=True):
+    def log(self,msg,tostdout=True,tostderr=False, timestamp=True):
 
         timestr = ""
         if timestamp:
             timestr += datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f ")        
 
         footer = ""
-        if msg[-1] != "\n":
+        if len(msg) > 0 and msg[-1] != "\n":
             footer = "\n"
             
         msg = "%s%s%s" % (timestr, msg,footer)
@@ -42,10 +110,10 @@ class Host:
         if self.logging:
             self.logfile.write(msg)
         
-        if stdout:
+        if tostdout:
             sys.stdout.write(msg)
 
-        if stderr:
+        if tostderr:
             sys.stderr.write(msg)
 
 
@@ -54,25 +122,43 @@ class Host:
     #timeout:   Time in seconds to wait for the command to run, otherwise kill it
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
-    def run(self, cmd, timeout=-1,block=True, pincpu=-1, realtime=False ):
+    def run(self, cmd, timeout=None,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False ):
         escaped = cmd.replace("\"","\\\"")
-        sub_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,escaped)
-        self.log(sub_cmd)
-
-        pid = os.fork()
-        if pid == 0:
-            p = subprocess.Popen(sub_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            while True:
-               line = p.stdout.readline()
-               if not line: break
-               self.log(line)
-
-            sys.exit(0) #Should return status code
-        else:
-            if(block):
-                os.waitpid(pid,0)
+        if timeout > 0 and not block:
+            escaped = "timeout %i %s" % (timeout,escaped)
+        ssh_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,escaped)  
+        pid = self.makepid()
+        self.log("Running ssh command \"%s\" with pid %s" % (ssh_cmd,pid), tostdout=tostdout)
+        result = Queue.Queue()
+        ssh_thread = CThread(self, ssh_cmd, returnout, result, tostdout)
+        self.pid2thread[pid] = ssh_thread
+        ssh_thread.start()
         
-        return -1
+        if(block):
+            #print "Waiting for thread to th pid %s terminate..." % (pid)
+            ssh_thread.join(timeout)           
+            
+            if ssh_thread.isAlive():
+                #print "Killing thread after timeout..."
+                ssh_thread.exit = True
+                #print "Waiting for thread to die..."
+                ssh_thread.join()
+                #print "Thread is dead"
+            else:
+                None
+                #print "Thread with pid %s just terminated" % (pid)
+                
+        return pid
+
+    def getoutput(self,pid, block=False, timeout=None):
+        results_q = self.pid2thread[pid].result
+        if results_q.empty():
+            return None
+
+        return results_q.get(block,timeout)
+
+    def isalive(self,pid):
+        return self.pid2thread[pid].isAlive()
 
     #Wait on a command on a remote host finishing
     def wait(self,pid, timeout):
@@ -80,8 +166,19 @@ class Host:
 
 
     #Stop the remote process by sending a signal
-    def kill(self,pid, signal=7):
-        return -1
+    def kill(self,pid):
+        print "Killing thread"
+        proc = self.pid2thread[pid]
+        proc.subproc.poll()
+        if proc.subproc.returncode is None:
+            proc.subproc.kill()
+            print "Waiting for thread to exit.."
+            while proc.isAlive():
+                proc.join()
+            print "Thread has exited.."
+        proc.subproc.poll()
+        return proc.subproc.returncode
+        
 
     
     #Copy data to the remote host with scp
@@ -114,6 +211,18 @@ class Host:
     def debug(self):
         print "DEBUG"
 
+    def __del__(self):
+        print "Destroying host %s" % self.name
+        for pid in pid2thread:
+            thread = pid2thread[pid]
+            if thread.isAlive():
+                print "Killing thread in destructor..."
+                ssh_thread.exit = True
+                print "Waiting for thread to die..."
+                ssh_thread.join()
+                print "Thread is dead"
+         
+
 #Operate on a list of hosts
 class Hosts:
     def __init__(self,hostlist):
@@ -124,13 +233,19 @@ class Hosts:
     #timeout:   Time in seconds to wait for the command to run, otherwise kill it
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
-    def run(self, cmd, timeout=-1,block=False, pincpu=-1, realtime=False ):
+    def run(self, cmd, timeout=-1,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
         results = []
         for host in self.hostlist:
-            result = host.run(cmd,timeout,block,pincpu,realtime)
+            result = host.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)
             results.append(result)
         return results
 
+    def getoutput(self,pid, block=False, timeout=None):
+        results = []
+        for host in self.hostlist:
+            result = host.getoutput(pid, block=block, timeout=timeout)
+            results.append(result)
+        return results
 
     #Wait on a command on a remote host finishing
     def wait(self,pid, timeout):
@@ -142,10 +257,10 @@ class Hosts:
 
 
     #Stop the remote process by sending a signal
-    def kill(self,pid, signal=7):
+    def kill(self,pid):
         results = []
         for host in self.hostlist:
-            result = host.kill(pid,signal)
+            result = host.kill(pid)
             results.append(result)
         return results
 
@@ -212,9 +327,12 @@ class Redo:
     def gethosts(self, start, stop):
         result = []
         first = False
+
         for host in self.hosts:
             if host.name == start:
                 first = True
+                if start == stop:
+                    return host
 
             if first:
                 result.append(host)
