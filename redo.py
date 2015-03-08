@@ -24,6 +24,32 @@ class CThread (threading.Thread):
         self.daemon     = False
         self.subproc    = None
 
+    def kill_subproc(self):
+        #print "Safe kill subprocess.."
+        p = self.subproc
+        p.poll()
+        if p.returncode is None:
+            #print "Process is alive, try kill.."
+            p.kill()
+            #print "Waiting for cleanup.."           
+
+            #Give the process some time to clean up            
+            timestep = 0.1 #seconds
+            timeout  = 10 #seconds
+            i = 0
+            while(p.returncode is None and i < (timeout/timestep)):
+                (pid, err_code) = os.waitpid(p.pid, os.WNOHANG) 
+                time.sleep(timestep)
+                i += 1
+            
+            if p.returncode is None:
+                #print "OK, terminating.."
+                p.terminate() #see https://www.youtube.com/watch?v=Up1hGZhvjzs
+                p.wait()                 
+
+        #print "Subprocess is (should be?) dead.."
+        return p.returncode
+
     def run(self):
         p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.subproc = p
@@ -33,13 +59,10 @@ class CThread (threading.Thread):
                 if stdout == None or stderr == None:
                     #Does this ever happen?? 
                     print "Communicate process is dead..."
-                    #Cleanly kill the subprocess
-                    p.poll()
-                    if p.returnid is not None:
-                        p.kill()
+                    self.kill_subproc()
                     thread.exit()
-                    print "Communicate unreachable..."
             except: #Communicate throws an exception if the subprocess dies
+                self.kill_subproc()
                 thread.exit()
 
             #Ouput our illgotten gains
@@ -51,9 +74,7 @@ class CThread (threading.Thread):
         def __del__(self):
             #Does this even work? Have never seen it happen
             print "Got the delete signal"
-            p.poll()
-            if p.returnid is not None:
-                p.kill()
+            self.kill_subproc()
             thread.exit()
 
 
@@ -124,17 +145,16 @@ class Host:
         
         if(block):
             #print "Waiting for thread to th pid %s terminate..." % (pid)
-            ssh_thread.join(timeout)           
-            
+            ssh_thread.join(timeout)                       
             if ssh_thread.isAlive():
-                #print "Killing thread after timeout..."
-                ssh_thread.exit = True
-                #print "Waiting for thread to die..."
+                print "Killing thread after timeout..."
+                ssh_thread.kill_subproc()
+                print "Waiting for thread to die..."
                 ssh_thread.join()
-                #print "Thread is dead"
+                print "Thread and process is dead"
             else:
                 None
-                #print "Thread with pid %s just terminated" % (pid)
+                print "Thread with pid %s just terminated" % (pid)
                 
         return pid
 
@@ -157,14 +177,10 @@ class Host:
     def kill(self,pid):
         print "Killing thread"
         proc = self.pid2thread[pid]
-        proc.subproc.poll()
-        if proc.subproc.returncode is None:
-            proc.subproc.kill()
-            print "Waiting for thread to exit.."
-            while proc.isAlive():
-                proc.join()
-            print "Thread has exited.."
-        proc.subproc.poll()
+        proc.kill_subproc()
+        print "Waiting for thread to exit.."
+        proc.join()
+        print "Thread has exited.."
         return proc.subproc.returncode
         
 
@@ -201,11 +217,11 @@ class Host:
 
     def __del__(self):
         print "Destroying host %s" % self.name
-        for pid in pid2thread:
+        for pid in self.pid2thread:
             thread = pid2thread[pid]
             if thread.isAlive():
                 print "Killing thread in destructor..."
-                ssh_thread.exit = True
+                
                 print "Waiting for thread to die..."
                 ssh_thread.join()
                 print "Thread is dead"
