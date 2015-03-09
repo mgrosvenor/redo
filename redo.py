@@ -51,19 +51,36 @@ class CThread (threading.Thread):
         return p.returncode
 
     def run(self):
+        usereadline = True #Python docs warn that this could break, I've never seen it but am skeptical
         p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.subproc = p
+        if usereadline:
+            fl = fcntl.fcntl(p.stdout, fcntl.F_GETFL)
+            fcntl.fcntl(p.stdout, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+            fl = fcntl.fcntl(p.stderr, fcntl.F_GETFL)
+            fcntl.fcntl(p.stderr, fcntl.F_SETFL, fl | os.O_NONBLOCK)
         while True:
-            try:
-                (stdout,stderr) = p.communicate()
-                if stdout == None or stderr == None:
-                    #Does this ever happen?? 
-                    print "Communicate process is dead..."
+            if usereadline:
+                if p.returncode is not None:
+                    thread.exit()
+
+                stdout = ""
+                stderr = ""
+                try: stdout = p.stdout.readline()
+                except: continue
+                try: stderr = p.stderr.readline()
+                except: continue
+            else:   
+                try:
+                    (stdout,stderr) = p.communicate()
+                    if stdout == None or stderr == None:
+                        #Does this ever happen?? 
+                        print "Communicate process is dead..."
+                        self.kill_subproc()
+                        thread.exit()
+                except: #Communicate throws an exception if the subprocess dies
                     self.kill_subproc()
                     thread.exit()
-            except: #Communicate throws an exception if the subprocess dies
-                self.kill_subproc()
-                thread.exit()
 
             #Ouput our illgotten gains
             self.parent.log(stdout, tostdout=self.tostdout)
@@ -142,7 +159,11 @@ class Host:
         ssh_thread = CThread(self, ssh_cmd, returnout, result, tostdout)
         self.pid2thread[pid] = ssh_thread
         ssh_thread.start()
-        
+ 
+        #Give the thread a litte time to get going       
+        while(ssh_thread.subproc is None):
+            None
+ 
         if(block):
             #print "Waiting for thread to th pid %s terminate..." % (pid)
             ssh_thread.join(timeout)                       
@@ -172,8 +193,6 @@ class Host:
     def wait(self, pid, timeout=None, kill=False):
         procthread = self.pid2thread[pid]
         #Wait for the thread to start up if it hasn't
-        while(procthread.subproc is None):
-            None
         print "Waiting for thread to th pid %s terminate..." % (pid)
         procthread.join(timeout)                       
         if procthread.isAlive():
