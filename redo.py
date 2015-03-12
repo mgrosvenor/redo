@@ -61,8 +61,11 @@ class CThread (threading.Thread):
             fcntl.fcntl(p.stderr, fcntl.F_SETFL, fl | os.O_NONBLOCK)
         while True:
             if usereadline:
+                #Check if process has died
+                p.poll()
                 if p.returncode is not None:
                     thread.exit()
+                    #Unreachable
 
                 stdout = ""
                 stderr = ""
@@ -112,35 +115,10 @@ class Host:
         self.free_cpus   = -1
             
         self.logging = logging
-        if logging:
-            self.logfilename  = "/tmp/redo_%s.log" % self.name
-            self.logfile      = open(self.logfilename,"w")
-
+    
     def makepid(self):
         self.pidcount += 1
         return "%s-%s" % (self.name,self.pidcount)
-
-    #(optionaly) Make pretty logs of everything that we do
-    def log(self,msg,tostdout=True,tostderr=False, timestamp=True):
-
-        timestr = ""
-        if timestamp:
-            timestr += datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f ")        
-
-        footer = ""
-        if len(msg) > 0 and msg[-1] != "\n":
-            footer = "\n"
-            
-        msg = "%s%s%s" % (timestr, msg,footer)
-
-        if self.logging:
-            self.logfile.write(msg)
-        
-        if tostdout:
-            sys.stdout.write(msg)
-
-        if tostderr:
-            sys.stderr.write(msg)
 
 
     #Run a command on a remote host return a pid for the command
@@ -315,7 +293,10 @@ class Hosts:
         return map( (lambda host: host.debug()), self.hostlist)
 
 class Redo:
-    def __init__(self, hostnames, unames):
+    def __init__(self, hostnames, unames, logging=True):
+        self.pid2thread = {}
+        self.pidcount   = 0
+        self.logging    = logging
         #Make a list of empy host structures
         if type(hostnames) != list:
             hostnames = [hostnames]
@@ -324,6 +305,11 @@ class Redo:
             self.hosts = [ Host(host,uname) for host,uname in zip(hostnames,unames) ]
         else:
             self.hosts = [ Host(host,unames) for host in hostnames ]
+
+        if logging:
+            self.logfilename  = "/tmp/redo_%s.log" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f "))
+            self.logfile      = open(self.logfilename,"w")
+
 
     #Get a range of hosts
     def gethosts(self, start, stop):
@@ -417,5 +403,102 @@ class Redo:
     #Use rsync to minimise copying 
     def sync_from(self,src,dst):
         return map( (lambda host: host.sync_from(pid,src,dst)), self.hosts)
+
+    def makepid(self):
+        self.pidcount += 1
+        return "%s-%s" % ("local",self.pidcount)
+
+    def local_run(self, cmd, timeout=None,block=True, returnout=True, tostdout=False ):
+        escaped = cmd.replace("\"","\\\"")
+        if timeout > 0 and not block:#Won't work on mac... :-(
+            escaped = "timeout %i %s" % (timeout,escaped)
+        local_cmd = "%s" %(escaped)  
+        pid = self.makepid()
+        self.log("Running ssh command \"%s\" with pid %s" % (local_cmd,pid), tostdout=tostdout)
+        result = Queue.Queue()
+        run_thread = CThread(self, local_cmd, returnout, result, tostdout)
+        self.pid2thread[pid] = run_thread
+        run_thread.start()
+ 
+        #Give the thread a litte time to get going       
+        while(run_thread.subproc is None):
+            None
+ 
+        if(block):
+            #print "Waiting for thread to th pid %s terminate..." % (pid)
+            run_thread.join(timeout)                       
+            if run_thread.isAlive():
+                print "Killing thread after timeout..."
+                run_thread.kill_subproc()
+                print "Waiting for thread to die..."
+                run_thread.join()
+                print "Thread and process is dead"
+            else:
+                None
+                print "Thread with pid %s just terminated" % (pid)
+                
+        return pid
+
+    #(optionaly) Make pretty logs of everything that we do
+    def log(self,msg,tostdout=True,tostderr=False, timestamp=True):
+
+        timestr = ""
+        if timestamp:
+            timestr += datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f ")        
+
+        footer = ""
+        if len(msg) > 0 and msg[-1] != "\n":
+            footer = "\n"
+            
+        msg = "%s%s%s" % (timestr, msg,footer)
+
+        if self.logging:
+            self.logfile.write(msg)
+        
+        if tostdout:
+            sys.stdout.write(msg)
+
+        if tostderr:
+            sys.stderr.write(msg)
+
+    def local_getoutput(self,pid, block=False, timeout=None):
+        results_q = self.pid2thread[pid].result
+        if results_q.empty():
+            return None
+
+        return results_q.get(block,timeout)
+
+    def local_isalive(self,pid):
+        return self.pid2thread[pid].isAlive()
+
+    #Wait on a command on a remote host finishing
+    def local_wait(self, pid, timeout=None, kill=False):
+        procthread = self.pid2thread[pid]
+        #Wait for the thread to start up if it hasn't
+        print "Waiting for thread to th pid %s terminate..." % (pid)
+        procthread.join(timeout)                       
+        if procthread.isAlive():
+            if not kill:
+                return None #Timedout, and not going to kill
+
+            print "Killing subprocess after timeout..."
+            procthread.kill_subproc()
+            print "Waiting for thread to die..."
+            procthread.join()
+            print "Thread and process is dead"
+            
+        return procthread.subproc.returncode
+
+
+    #Stop the remote process by sending a signal
+    def local_kill(self,pid):
+        print "Killing thread"
+        proc = self.pid2thread[pid]
+        proc.kill_subproc()
+        print "Waiting for thread to exit.."
+        proc.join()
+        print "Thread has exited.."
+        return proc.subproc.returncode
+        
 
 
