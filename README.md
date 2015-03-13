@@ -48,13 +48,13 @@ Runs the given command on the remote box
 ```
 run(cmd,timeout=None, block=True, pincpu=-1,realtime=False, returnout=True, tostdout=False)
 ```
-***cmd*** is a shell (usually BASH) command line  
-***timeout*** is the time in seconds that we should wait for the remote command to finish before killing it  
-***pincpu*** ***NOT YET IMPLEMENTED*** allows the remote command to be pinned to a specific CPU and removed all other processes from that CPU
-***realtime*** ***NOT YET IMPLEMENTED*** runs the remote process as a realtime scheduled application with highest CPU prioirty
-***returnout*** should the remote process retun its output to the controller progrem, or just ignore it.
-***tostdout** should the output from the remote process be sent to standard out. 
-
+- ***cmd*** is a shell (usually BASH) command line  
+- ***timeout*** is the time in seconds that we should wait for the remote command to finish before killing it  
+- ***pincpu*** ***NOT YET IMPLEMENTED*** allows the remote command to be pinned to a specific CPU and removed all    other processes from that CPU   
+- ***realtime*** ***NOT YET IMPLEMENTED*** runs the remote process as a realtime scheduled application with highest - CPU prioirty   
+- ***returnout*** should the remote process retun its output to the controller progrem, or just ignore it.   
+- ***tostdout** should the output from the remote process be sent to standard out.    
+ 
 
 
 
