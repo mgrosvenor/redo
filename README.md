@@ -68,7 +68,17 @@ wait(pids,timeout,kill)
 - ***timeout*** is a time in seconds to wait for the process to terminate. If it is None then wait will wait forever
 - ***kill*** if true and timeout is not None, this will kill the process with the given PIDs after the timeout
 
-wait() will return the exit code of the SSH session used to run the remote process. 
+wait() will return the exit code of the SSH session used to run the remote process None if the process has failed to terminate
+
+#### kill() ####
+Kills all processes with the given pids. Is equivalent to wait without a timeout. 
+```
+kill(pids)
+```
+- ***pids*** is a list of process IDs as returned by run()
+
+KILL() will return the exit code of the SSH session used to run the remote process. 
+
 
 
 
