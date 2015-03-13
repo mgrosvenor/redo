@@ -86,8 +86,8 @@ class CThread (threading.Thread):
                     thread.exit()
 
             #Ouput our illgotten gains
-            if stdout and stdout != "": self.parent.redo_main.log(stdout, tostdout=self.tostdout)
-            if stderr and stderr != "": self.parent.redo_main.log(stderr, tostdout=self.tostdout)
+            if stdout and stdout != "": self.parent.log(stdout, tostdout=self.tostdout)
+            if stderr and stderr != "": self.parent.log(stderr, tostdout=self.tostdout)
             if stdout and self.returnout: self.result.put(stdout) 
             if stderr and self.returnout: self.result.put(stderr) 
                 
@@ -100,7 +100,7 @@ class CThread (threading.Thread):
 
 #Defines a remote host
 class Host:
-    def __init__(self, redo, name,uname,logging = True):
+    def __init__(self, redo, name,uname,logging = True, init=True):
         self.pidcount    = -1
         self.pid2thread  = {} #maps PIDs to threads
         
@@ -114,12 +114,26 @@ class Host:
         self.disk_space  = -1
         self.pinned_cpus = -1
         self.free_cpus   = -1
-            
+        self.workdir     = self.redo_main.workdir    
+        
         self.logging = logging
+
+        if(init):
+            self.inithost() #populate host info
+   
+    def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
+        self.redo_main.log(msg,tostdout,tostderr,timestamp)
+
     
     def makepid(self):
         self.pidcount += 1
         return "%s-%s" % (self.name,self.pidcount)
+
+    def cd(self,path):
+        self.workdir = path
+    
+    def inithost(self):
+        self.run("mkdir -p %s" % (self.redo_main.workdir))
 
 
     #Run a command on a remote host return a pid for the command
@@ -131,7 +145,8 @@ class Host:
         escaped = cmd.replace("\"","\\\"")
         if timeout > 0 and not block:
             escaped = "timeout %i %s" % (timeout,escaped)
-        ssh_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,escaped)  
+        workdir_cmd = "cd %s; %s" % (self.workdir,escaped)
+        ssh_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,workdir_cmd)  
         pid = self.makepid()
         self.redo_main.log("Running ssh command \"%s\" with pid %s" % (ssh_cmd,pid), tostdout=tostdout)
         self.redo_main.log("%s" % (ssh_cmd), tostdout=tostdout)
@@ -258,9 +273,22 @@ class Hosts:
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
     def run(self, cmd, timeout=None, block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
-        return map( (lambda host: host.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)), self.hostlist)
-        
+        #This one is special, we want things to run in parallell. So we don't pass the blocking through
+        pids = map( (lambda host: host.run(cmd,timeout,False,pincpu,realtime,returnout,tostdout)), self.hostlist)
+        if block == True:
+            print "Waiting on pid %s" % (pids)
+            self.wait(pids,timeout=None)
 
+        return pids
+            
+
+    def cd(self,paths):
+        if type(paths) is not list:
+            paths = [paths] * len(self.hostlist)
+
+        return map( (lambda (host,path): host.cd(path)), zip(self.hostlist,paths))
+        
+ 
     def getoutput(self,pids, block=False, timeout=None):
         return map( (lambda (host,pid): host.getoutput(pid,block,timeout)), zip(self.hostlist,pids))
 
@@ -325,6 +353,18 @@ class Hosts:
     def debug(self):
         return map( (lambda host: host.debug()), self.hostlist)
 
+
+
+
+
+
+
+
+
+
+
+
+######################################################################################################################
 class Redo:
     def __init__(self, hostnames, unames, workdir="/tmp/redo/",logging=True):
         self.pid2thread = {}
@@ -334,8 +374,11 @@ class Redo:
 
         if not os.path.exists(self.workdir):
             os.makedirs(self.workdir)
-
         os.chdir(self.workdir)
+
+        if logging:
+            self.logfilename  = self.workdir + "/redo_%s.log" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
+            self.logfile      = open(self.logfilename,"w")
 
         #Make a list of empy host structures
         if type(hostnames) != list:
@@ -345,10 +388,6 @@ class Redo:
             self.hostlist = [ Host(self,host,uname) for host,uname in zip(hostnames,unames) ]
         else:
             self.hostlist = [ Host(self,host,unames) for host in hostnames ]
-
-        if logging:
-            self.logfilename  = self.workdir + "/redo_%s.log" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
-            self.logfile      = open(self.logfilename,"w")
 
 
     #Get a range of hosts
@@ -417,6 +456,9 @@ class Redo:
         hosts = Hosts(self.hostlist)
         return hosts.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)
         
+    def cd(self,path):
+        hosts = Hosts(self.hostlist)        
+        return hosts.cd(path)
 
     def getoutput(self,pid, block=False, timeout=None):
         hosts = Hosts(self.hostlist)
@@ -550,4 +592,6 @@ class Redo:
         return proc.subproc.returncode
         
 
+    def local_cd(self,path):
+        os.chdir(path)
 
