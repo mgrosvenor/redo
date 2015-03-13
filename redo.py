@@ -261,32 +261,58 @@ class Hosts:
         return map( (lambda host: host.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)), self.hostlist)
         
 
-    def getoutput(self,pid, block=False, timeout=None):
-        return map( (lambda host: host.getoutput(pid,block,timeout)), self.hostlist)
+    def getoutput(self,pids, block=False, timeout=None):
+        return map( (lambda (host,pid): host.getoutput(pid,block,timeout)), zip(self.hostlist,pids))
 
     #Wait on a command on a remote host finishing
-    def wait(self,pid, timeout=None, kill=False):
-        return map( (lambda host: host.wait(pid,timeout,kill)), self.hostlist)
+    def wait(self,pids, timeout=None, kill=False):
+        return map( (lambda (host,pid): host.wait(pid,timeout,kill)), zip(self.hostlist,pids))
 
     #Stop the remote process by sending a signal
-    def kill(self,pid):
-        return map( (lambda host: host.kill(pid)), self.hostlist)
+    def kill(self,pid)s:
+        return map( (lambda (host,pid): host.kill(pid)), zip(self.hostlist,pids))
          
     #Copy data to the remote host with scp
-    def copy_to(self,src,dst):
-        return map( (lambda host: host.copy_to(src,dst)), self.hostlist)
+    def copy_to(self,srcs,dsts):
+        if type(srcs) is not list:
+            srcs = srcs * len(self.hostslist)
+
+        if type(dsts) is not list:
+            dsts = srcs * len(self.hostlist)
+
+        return map( (lambda (host,src,dst): host.copy_to(src,dst)), zip(self.hostlist,srcs, dsts))
 
     #Copy data from the remote host with scp
     def copy_from(self,src,dst):
-        return map( (lambda host: host.copy_from(pid,src,dst)), self.hostlist)
+        if type(srcs) is not list:
+            srcs = srcs * len(self.hostslist)
+
+        if type(dsts) is not list:
+            dsts = srcs * len(self.hostlist)
+
+        return map( (lambda (host,src,dst): host.copy_from(src,dst)), zip(self.hostlist,srcs, dsts))
+
 
     #Use rysnc to minimise copying
     def sync_to(self, src, dst):
-        return map( (lambda host: host.sync_to(pid,src,dst)), self.hostlist)
+        if type(srcs) is not list:
+            srcs = srcs * len(self.hostslist)
+
+        if type(dsts) is not list:
+            dsts = srcs * len(self.hostlist)
+
+        return map( (lambda (host,src,dst): host.sync_to(src,dst)), zip(self.hostlist,srcs, dsts))
+
 
     #Use rsync to minimise copying 
     def sync_from(self,src,dst):
-        return map( (lambda host: host.sync_from(pid,src,dst)), self.hostlist)
+        if type(srcs) is not list:
+            srcs = srcs * len(self.hostslist)
+
+        if type(dsts) is not list:
+            dsts = srcs * len(self.hostlist)
+
+        return map( (lambda (host,src,dst): host.sync_from(src,dst)), zip(self.hostlist,srcs, dsts))
 
     #Nice string representation    
     def __str__(self):
@@ -300,21 +326,28 @@ class Hosts:
         return map( (lambda host: host.debug()), self.hostlist)
 
 class Redo:
-    def __init__(self, hostnames, unames, logging=True):
+    def __init__(self, hostnames, unames, workdir="/tmp/redo/",logging=True):
         self.pid2thread = {}
         self.pidcount   = 0
         self.logging    = logging
+        self.workdir    = workdir
+
+        if not os.path.exists(self.workdir):
+            os.makedirs(self.workdir)
+
+        os.chdir(self.workdir)
+
         #Make a list of empy host structures
         if type(hostnames) != list:
             hostnames = [hostnames]
 
         if type(unames) == list:            
-            self.hosts = [ Host(self,host,uname) for host,uname in zip(hostnames,unames) ]
+            self.hostlist = [ Host(self,host,uname) for host,uname in zip(hostnames,unames) ]
         else:
-            self.hosts = [ Host(self,host,unames) for host in hostnames ]
+            self.hostlist = [ Host(self,host,unames) for host in hostnames ]
 
         if logging:
-            self.logfilename  = "/tmp/redo_%s.log" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
+            self.logfilename  = self.workdir + "/redo_%s.log" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
             self.logfile      = open(self.logfilename,"w")
 
 
@@ -323,7 +356,7 @@ class Redo:
         result = []
         first = False
 
-        for host in self.hosts:
+        for host in self.hostlist:
             if host.name == start:
                 first = True
                 if start == stop:
@@ -345,26 +378,26 @@ class Redo:
 
         if type(key) is slice:
             if type(key.start) is int:
-                start = self.hosts[key.start].name
+                start = self.hostlist[key.start].name
             if type(key.start) is str:
                 start = key.start
             if key.start is None:
-                start = self.hosts[0].name
+                start = self.hostlist[0].name
 
             if type(key.stop) is int:
                 idx = key.stop
-                if key.stop > len(self.hosts):
-                    idx = len(self.hosts) -1
-                stop = self.hosts[idx].name
+                if key.stop > len(self.hostlist):
+                    idx = len(self.hostlist) -1
+                stop = self.hostlist[idx].name
             if type(key.stop) is str:
                 stop = key.stop
             if key.stop is None:
-                stop = self.hosts[-1].name
+                stop = self.hostlist[-1].name
 
 
         if type(key) is int:
-            start = self.hosts[key].name
-            stop  = self.hosts[key].name
+            start = self.hostlist[key].name
+            stop  = self.hostlist[key].name
 
         if type(key) is str:
             start = key
@@ -373,7 +406,7 @@ class Redo:
         return self.gethosts(start,stop)
 
     def __len__(self):
-        return len(self.hosts)
+        return len(self.hostlist)
 
     #Run a command on a remote host return a pid for the command
     #cmd:       Text string of the command to run
@@ -381,35 +414,43 @@ class Redo:
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
     def run(self, cmd, timeout=-1,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
-        return map( (lambda host: host.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)), self.hosts)
+        hosts = Hosts(self.hostlist)
+        return hosts.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)
         
 
     def getoutput(self,pid, block=False, timeout=None):
-        return map( (lambda host: host.getoutput(pid,block,timeout)), self.hosts)
+        hosts = Hosts(self.hostlist)
+        return hosts.getoutput(pid,block,timeout)
 
     #Wait on a command on a remote host finishing
-    def wait(self,pid, timeout=None, kill=False):
-        return map( (lambda host: host.wait(pid,timeout,kill)), self.hosts)
+    def wait(self,pids, timeout=None, kill=False):
+        hosts = Hosts(self.hostlist)
+        return host.wait(pids,timeout,kill)
 
     #Stop the remote process by sending a signal
-    def kill(self,pid):
-        return map( (lambda host: host.kill(pid)), self.hosts)
+    def kill(self,pids):
+        hosts = Hosts(self.hostlist)
+        return hosts.kill(pids)
          
     #Copy data to the remote host with scp
     def copy_to(self,src,dst):
-        return map( (lambda host: host.copy_to(src,dst)), self.hosts)
+        hosts = Hosts(self.hostlist)
+        return map( (lambda host: host.copy_to(src,dst)), self.hostlist)
 
     #Copy data from the remote host with scp
-    def copy_from(self,src,dst):
-        return map( (lambda host: host.copy_from(pid,src,dst)), self.hosts)
+    def copy_from(self,srcs,dsts):
+        hosts = Hosts(self.hostlist)
+        return hosts.copy_from(srcs,dsts)
 
     #Use rysnc to minimise copying
-    def sync_to(self, src, dst):
-        return map( (lambda host: host.sync_to(pid,src,dst)), self.hosts)
+    def sync_to(self, srcs, dsts):
+        hosts = Hosts(self.hostlist)
+        return hosts.sync_to(srcs,dsts)
 
     #Use rsync to minimise copying 
-    def sync_from(self,src,dst):
-        return map( (lambda host: host.sync_from(pid,src,dst)), self.hosts)
+    def sync_from(self,srcs,dsts):
+        hosts = Hosts(self.hostlist)
+        return hosts.sync_from(srcs,dsts)
 
     def makepid(self):
         self.pidcount += 1
