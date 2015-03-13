@@ -52,7 +52,7 @@ class CThread (threading.Thread):
 
     def run(self):
         usereadline = True #Python docs warn that this could break, I've never seen it but am skeptical
-        #usereadline = False #Python docs warn that this could break, I've never seen it but am skeptical
+        usereadline = False #Python docs warn that this could break, I've never seen it but am skeptical
         p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.subproc = p
         if usereadline:
