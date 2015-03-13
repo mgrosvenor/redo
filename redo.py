@@ -52,6 +52,7 @@ class CThread (threading.Thread):
 
     def run(self):
         usereadline = True #Python docs warn that this could break, I've never seen it but am skeptical
+        #usereadline = False #Python docs warn that this could break, I've never seen it but am skeptical
         p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.subproc = p
         if usereadline:
@@ -60,19 +61,18 @@ class CThread (threading.Thread):
             fl = fcntl.fcntl(p.stderr, fcntl.F_GETFL)
             fcntl.fcntl(p.stderr, fcntl.F_SETFL, fl | os.O_NONBLOCK)
         while True:
+            stdout = None
+            stderr = None
             if usereadline:
                 #Check if process has died
                 p.poll()
                 if p.returncode is not None:
                     thread.exit()
                     #Unreachable
-
-                stdout = ""
-                stderr = ""
                 try: stdout = p.stdout.readline()
-                except: continue
+                except: None
                 try: stderr = p.stderr.readline()
-                except: continue
+                except: None
             else:   
                 try:
                     (stdout,stderr) = p.communicate()
@@ -86,10 +86,10 @@ class CThread (threading.Thread):
                     thread.exit()
 
             #Ouput our illgotten gains
-            if stdout != "": self.parent.log(stdout, tostdout=self.tostdout)
-            if stderr != "": self.parent.log(stderr, tostdout=self.tostdout)
-            if self.returnout: self.result.put(stdout) 
-            if self.returnout: self.result.put(stderr) 
+            if stdout and stdout != "": self.parent.redo_main.log(stdout, tostdout=self.tostdout)
+            if stderr and stderr != "": self.parent.redo_main.log(stderr, tostdout=self.tostdout)
+            if stdout and self.returnout: self.result.put(stdout) 
+            if stderr and self.returnout: self.result.put(stderr) 
                 
         def __del__(self):
             #Does this even work? Have never seen it happen
@@ -257,7 +257,7 @@ class Hosts:
     #timeout:   Time in seconds to wait for the command to run, otherwise kill it
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
-    def run(self, cmd, timeout=-1,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+    def run(self, cmd, timeout=None, block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
         return map( (lambda host: host.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)), self.hostlist)
         
 
@@ -413,7 +413,7 @@ class Redo:
     #timeout:   Time in seconds to wait for the command to run, otherwise kill it
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
-    def run(self, cmd, timeout=-1,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+    def run(self, cmd, timeout=None,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
         hosts = Hosts(self.hostlist)
         return hosts.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)
         
