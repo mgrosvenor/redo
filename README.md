@@ -77,8 +77,19 @@ kill(pids)
 ```
 - ***pids*** is a list of process IDs as returned by run()
 
-KILL() will return the exit code of the SSH session used to run the remote process. 
+kill() will return the exit code of the SSH session used to run the remote process. 
 
+
+#### getoutput() ####
+Gets the outputs from the PIDs listed.
+```
+getoutput(pids,block=False,timeout=None)
+```
+- ***pids*** is the list of process IDs as returned by run()
+- ***block*** should getoutputs wait for output or return immediately if there is none
+- ***tiemout*** how long to wait for output if there isn't any yet
+
+getoutput() will return a list of strings as output from the remote applications. 
 
 
 
