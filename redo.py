@@ -12,7 +12,7 @@ import fcntl
 import select
 import time
 
-#This is a giant work arount the completely brain dead subprocess stdin/stdout/communicate behaviour
+#This is a giant work around the completely brain dead subprocess stdin/stdout/communicate behaviour
 class CThread (threading.Thread):
     def __init__(self, parent, cmd, returnout, result, tostdout):
         threading.Thread.__init__(self)
@@ -133,8 +133,8 @@ class Host:
             escaped = "timeout %i %s" % (timeout,escaped)
         ssh_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,escaped)  
         pid = self.makepid()
-        self.log("Running ssh command \"%s\" with pid %s" % (ssh_cmd,pid), tostdout=tostdout)
-        self.log("%s" % (ssh_cmd,pid), tostdout=tostdout)
+        self.redo_main.log("Running ssh command \"%s\" with pid %s" % (ssh_cmd,pid), tostdout=tostdout)
+        self.redo_main.log("%s" % (ssh_cmd), tostdout=tostdout)
         result = Queue.Queue()
         ssh_thread = CThread(self, ssh_cmd, returnout, result, tostdout)
         self.pid2thread[pid] = ssh_thread
@@ -269,7 +269,7 @@ class Hosts:
         return map( (lambda (host,pid): host.wait(pid,timeout,kill)), zip(self.hostlist,pids))
 
     #Stop the remote process by sending a signal
-    def kill(self,pid)s:
+    def kill(self,pids):
         return map( (lambda (host,pid): host.kill(pid)), zip(self.hostlist,pids))
          
     #Copy data to the remote host with scp
