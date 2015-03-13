@@ -489,7 +489,7 @@ class Redo:
         return pid
 
     #(optionaly) Make pretty logs of everything that we do
-    def log(self,msg,tostdout=True,tostderr=False, timestamp=True):
+    def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
 
         timestr = ""
         if timestamp:
