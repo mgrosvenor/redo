@@ -95,6 +95,55 @@ getoutput() will return a list of strings as output from the remote applications
 
 
 
+### Local functions ###
+As part of setting up and doing remote things, you probably will want to do some local things to. 
+Redo includes the following local functions to help this. 
+
+
+#### local_run() ####
+Runs the given command on the local box
+```
+local_run(cmd,timeout=None, block=True, returnout=True, tostdout=False)
+```
+- ***cmd*** is a shell (usually BASH) command line to run on the remote host(s)
+- ***timeout*** is the time in seconds that we should wait for the remote command to finish before killing it  
+- ***block*** should redo block waiting for the command to finish, or should it run these in the background. 
+- ***returnout*** should the remote process retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the output from the remote process be sent to standard out.    
+
+run() returns a list of of proces identifiers (PIDs) which can be used with the following commands 
+
+
+#### local_wait() ####
+For for the processes given PIDs to complete running. Optionally kill them if they haven't finished
+```
+local_wait(pids,timeout,kill)
+```
+- ***pids*** is a list of process IDs as returned by run()
+- ***timeout*** is a time in seconds to wait for the process to terminate. If it is None then wait will wait forever
+- ***kill*** if true and timeout is not None, this will kill the process with the given PIDs after the timeout
+
+wait() will return the exit code of the process, None if the process has failed to terminate
+
+#### local_kill() ####
+Kills all processes with the given pids. Is equivalent to local_wait() with a timeout of 0.
+```
+local_kill(pids)
+```
+- ***pids*** is a list of process IDs as returned by local_run()
+
+local_kill() will return the exit code of the process. 
+
+### log() ####
+```
+log(msg,tostdout=True, tostderr=False,timestamp=True)
+```
+- ***msg*** a string containing the message to be logged
+- ***tostdout*** should the log also output to standard out as it logs
+- ***tostderr*** should the log also output to stderr as it logs
+- ***timestamp*** should the log include a timestamp from when it was created?
+
+
 
 
 
