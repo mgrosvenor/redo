@@ -86,8 +86,8 @@ class CThread (threading.Thread):
                     thread.exit()
 
             #Ouput our illgotten gains
-            self.parent.log(stdout, tostdout=self.tostdout)
-            self.parent.log(stderr, tostdout=self.tostdout)
+            if stdout != "": self.parent.log(stdout, tostdout=self.tostdout)
+            if stderr != "": self.parent.log(stderr, tostdout=self.tostdout)
             if self.returnout: self.result.put(stdout) 
             if self.returnout: self.result.put(stderr) 
                 
@@ -100,12 +100,13 @@ class CThread (threading.Thread):
 
 #Defines a remote host
 class Host:
-    def __init__(self, name,uname,logging = True):
+    def __init__(self, redo, name,uname,logging = True):
         self.pidcount    = -1
         self.pid2thread  = {} #maps PIDs to threads
         
         self.name        = name
         self.uname       = uname
+        self.redo_main   = redo
         #Populating these should be ported to some general infrastructure at some point
         self.mac         = -1
         self.cpu_count   = -1 
@@ -133,6 +134,7 @@ class Host:
         ssh_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,escaped)  
         pid = self.makepid()
         self.log("Running ssh command \"%s\" with pid %s" % (ssh_cmd,pid), tostdout=tostdout)
+        self.log("%s" % (ssh_cmd,pid), tostdout=tostdout)
         result = Queue.Queue()
         ssh_thread = CThread(self, ssh_cmd, returnout, result, tostdout)
         self.pid2thread[pid] = ssh_thread
@@ -143,17 +145,17 @@ class Host:
             None
  
         if(block):
-            #print "Waiting for thread to th pid %s terminate..." % (pid)
+            self.redo_main.log("REDO [%s]: Waiting for thread to th pid %s terminate..." % (self.name,pid))
             ssh_thread.join(timeout)                       
             if ssh_thread.isAlive():
-                print "Killing thread after timeout..."
+                self.redo_main.log("REDO [%s]: Killing thread running pid \"%s\" after timeout..." % (self.name, pid))
                 ssh_thread.kill_subproc()
-                print "Waiting for thread to die..."
+                self.redo_main.log("REDO [%s]: Waiting for thread to die..." % (self.name))
                 ssh_thread.join()
-                print "Thread and process is dead"
+                self.redo_main.log("REDO [%s]: Thread and process is dead" % (self.name))
             else:
                 None
-                print "Thread with pid %s just terminated" % (pid)
+                self.redo_main.log("REDO [%s]: Thread with pid %s just terminated" % (self.name,pid))
                 
         return pid
 
@@ -171,29 +173,34 @@ class Host:
     def wait(self, pid, timeout=None, kill=False):
         procthread = self.pid2thread[pid]
         #Wait for the thread to start up if it hasn't
-        print "Waiting for thread to th pid %s terminate..." % (pid)
+        self.log("REDO [MAIN]: Waiting for thread with pid \"%s\" to terminate..." % (pid))
         procthread.join(timeout)                       
         if procthread.isAlive():
             if not kill:
                 return None #Timedout, and not going to kill
 
-            print "Killing subprocess after timeout..."
+            self.log("REDO [MAIN]: Killing pid \"%s\" after timeout..." % (pid))
             procthread.kill_subproc()
-            print "Waiting for thread to die..."
+            self.log("REDO [MAIN]: Waiting for thread running pid \"%s\" to die..." % (pid))
             procthread.join()
-            print "Thread and process is dead"
-            
+            self.log("REDO [MAIN]: Thread and running pid \"%s\" is dead" % (pid))
+        
+        if procthread.subproc.returncode: 
+            self.log("REDO [MAIN]: Process with pid \"%s\" terminated with return code \"%i\" ..." % (pid,procthread.subproc.returncode))
+        else:
+            self.log("REDO [MAIN]: Process with pid \"%s\" has not yet terminated ..." % (pid))
+        
         return procthread.subproc.returncode
 
 
     #Stop the remote process by sending a signal
     def kill(self,pid):
-        print "Killing thread"
+        self.redo_main.log("REDO [%s]: Killing thread with pid \"%s\" " % (self.name, pid))
         proc = self.pid2thread[pid]
         proc.kill_subproc()
-        print "Waiting for thread to exit.."
+        self.redo_main.log("REDO [%s]: Waiting for thread to exit.." %(self.name))
         proc.join()
-        print "Thread has exited.."
+        self.redo_main.log("REDO [%s}: Thread has exited.." %(self.name))
         return proc.subproc.returncode
         
 
@@ -229,15 +236,15 @@ class Host:
         print "DEBUG"
 
     def __del__(self):
-        print "Destroying host %s" % self.name
+        self.redo_main.log("REDO [%s]: Destroying host %s" % (self.name,self.name))
         for pid in self.pid2thread:
             procthread = pid2thread[pid]
             if procthread.isAlive():
-                print "Killing thread in destructor..."
+                self.redo_main.log("REDO [%s]: Killing thread in destructor..." % (self.name))
                 peocthread.kill_subproc() 
-                print "Waiting for thread to die..."
+                self.redo_main.log("REDO [%s]: Waiting for thread to die..." % (self.name))
                 procthread.join()
-                print "Thread is dead"
+                self.redo_main.log("REDO [%s]: Thread is dead" % (self.main))
          
 
 #Operate on a list of hosts
@@ -302,12 +309,12 @@ class Redo:
             hostnames = [hostnames]
 
         if type(unames) == list:            
-            self.hosts = [ Host(host,uname) for host,uname in zip(hostnames,unames) ]
+            self.hosts = [ Host(self,host,uname) for host,uname in zip(hostnames,unames) ]
         else:
-            self.hosts = [ Host(host,unames) for host in hostnames ]
+            self.hosts = [ Host(self,host,unames) for host in hostnames ]
 
         if logging:
-            self.logfilename  = "/tmp/redo_%s.log" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f "))
+            self.logfilename  = "/tmp/redo_%s.log" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
             self.logfile      = open(self.logfilename,"w")
 
 
@@ -414,7 +421,8 @@ class Redo:
             escaped = "timeout %i %s" % (timeout,escaped)
         local_cmd = "%s" %(escaped)  
         pid = self.makepid()
-        self.log("Running ssh command \"%s\" with pid %s" % (local_cmd,pid), tostdout=tostdout)
+        self.log("REDO [main]: Running command \"%s\" with pid %s" % (local_cmd,pid), tostdout=tostdout)
+        self.log("REDO [main]: %s" % (local_cmd), tostdout=tostdout)
         result = Queue.Queue()
         run_thread = CThread(self, local_cmd, returnout, result, tostdout)
         self.pid2thread[pid] = run_thread
@@ -428,14 +436,14 @@ class Redo:
             #print "Waiting for thread to th pid %s terminate..." % (pid)
             run_thread.join(timeout)                       
             if run_thread.isAlive():
-                print "Killing thread after timeout..."
+                self.log("REDO [main]: Killing thread after timeout...")
                 run_thread.kill_subproc()
-                print "Waiting for thread to die..."
+                self.log("REDO [main]: Waiting for thread to die...")
                 run_thread.join()
-                print "Thread and process is dead"
+                self.log("REDO [main]: Thread and process is dead")
             else:
                 None
-                print "Thread with pid %s just terminated" % (pid)
+                self.log("REDO [main]: Thread with pid %s just terminated" % (pid))
                 
         return pid
 
@@ -475,29 +483,29 @@ class Redo:
     def local_wait(self, pid, timeout=None, kill=False):
         procthread = self.pid2thread[pid]
         #Wait for the thread to start up if it hasn't
-        print "Waiting for thread to th pid %s terminate..." % (pid)
+        self.log("REDO [main]: Waiting for thread to th pid %s terminate..." % (pid))
         procthread.join(timeout)                       
         if procthread.isAlive():
             if not kill:
                 return None #Timedout, and not going to kill
 
-            print "Killing subprocess after timeout..."
+            self.log("REDO [main]: Killing subprocess after timeout...")
             procthread.kill_subproc()
-            print "Waiting for thread to die..."
+            self.log("REDO [main]: Waiting for thread to die...")
             procthread.join()
-            print "Thread and process is dead"
+            self.log("REDO [main]: Thread and process is dead")
             
         return procthread.subproc.returncode
 
 
     #Stop the remote process by sending a signal
     def local_kill(self,pid):
-        print "Killing thread"
+        self.log("REDO [main]: Killing thread")
         proc = self.pid2thread[pid]
         proc.kill_subproc()
-        print "Waiting for thread to exit.."
+        self.log("REDO [main]: Waiting for thread to exit..")
         proc.join()
-        print "Thread has exited.."
+        self.log("REDO [main]: Thread has exited..")
         return proc.subproc.returncode
         
 
