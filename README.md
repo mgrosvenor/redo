@@ -43,18 +43,33 @@ test_all = redo[:]
 ```
 ### Run remote functions ###
 Redo has a number of useful remote functions  
-#### Run() ####
+#### run() ####
 Runs the given command on the remote box
 ```
 run(cmd,timeout=None, block=True, pincpu=-1,realtime=False, returnout=True, tostdout=False)
 ```
-- ***cmd*** is a shell (usually BASH) command line  
+- ***cmd*** is a shell (usually BASH) command line to run on the remote host(s)
 - ***timeout*** is the time in seconds that we should wait for the remote command to finish before killing it  
+- ***block*** should redo block waiting for the command to finish, or should it run these in the background. 
 - ***pincpu*** ***NOT YET IMPLEMENTED*** allows the remote command to be pinned to a specific CPU and removed all    other processes from that CPU   
 - ***realtime*** ***NOT YET IMPLEMENTED*** runs the remote process as a realtime scheduled application with highest - CPU prioirty   
 - ***returnout*** should the remote process retun its output to the controller progrem, or just ignore it.   
-- ***tostdout** should the output from the remote process be sent to standard out.    
- 
+- ***tostdout*** should the output from the remote process be sent to standard out.    
+
+run() returns a list of of proces identifiers (PIDs) which can be used with the following commands 
+
+
+#### wait() ####
+For for the processes given PIDs to complete running. Optionally kill them if they haven't finished
+```
+wait(pids,timeout,kill)
+```
+- ***pids*** is a list of process IDs as returned by run()
+- ***timeout*** is a time in seconds to wait for the process to terminate. If it is None then wait will wait forever
+- ***kill*** if true and timeout is not None, this will kill the process with the given PIDs after the timeout
+
+wait() will return the exit code of the SSH session used to run the remote process. 
+
 
 
 
