@@ -12,6 +12,28 @@ import fcntl
 import select
 import time
 
+#(optionaly) Make pretty logs of everything that we do
+def log(logfile,msg,tostdout=False,tostderr=False, timestamp=True):
+
+    timestr = ""
+    if timestamp:
+        timestr += datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f ")        
+
+    footer = ""
+    if len(msg) > 0 and msg[-1] != "\n":
+        footer = "\n"
+        
+    msg = "%s%s%s" % (timestr, msg,footer)
+
+    logfile.write(msg)
+    
+    if tostdout:
+        sys.stdout.write(msg)
+
+    if tostderr:
+        sys.stderr.write(msg)
+
+
 #This is a giant work around the completely brain dead subprocess stdin/stdout/communicate behaviour
 class CThread (threading.Thread):
     def __init__(self, parent, cmd, returnout, result, tostdout):
@@ -100,7 +122,7 @@ class CThread (threading.Thread):
 
 #Defines a remote host
 class Host:
-    def __init__(self, redo, name,uname,logging = True, init=True):
+    def __init__(self, redo, name,uname,logging, init, logfilename):
         self.pidcount    = -1
         self.pid2thread  = {} #maps PIDs to threads
         
@@ -116,13 +138,15 @@ class Host:
         self.free_cpus   = -1
         self.workdir     = self.redo_main.workdir    
         
-        self.logging = logging
+        self.logging     = logging
+        self.logfilename = logfilename + "-" + self.name
+        self.logfile     = open(self.logfilename + ".log","w")
 
         if(init):
             self.inithost() #populate host info
    
     def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
-        self.redo_main.log(msg,tostdout,tostderr,timestamp)
+        log(self.logfile,msg,tostdout,tostderr,timestamp)
 
     
     def makepid(self):
@@ -148,8 +172,8 @@ class Host:
         workdir_cmd = "cd %s; %s" % (self.workdir,escaped)
         ssh_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,workdir_cmd)  
         pid = self.makepid()
-        self.redo_main.log("Running ssh command \"%s\" with pid %s" % (ssh_cmd,pid), tostdout=tostdout)
-        self.redo_main.log("%s" % (ssh_cmd), tostdout=tostdout)
+        self.log("Running ssh command \"%s\" with pid %s" % (ssh_cmd,pid), tostdout=tostdout)
+        self.log("%s" % (ssh_cmd), tostdout=tostdout)
         result = Queue.Queue()
         ssh_thread = CThread(self, ssh_cmd, returnout, result, tostdout)
         self.pid2thread[pid] = ssh_thread
@@ -160,17 +184,17 @@ class Host:
             None
  
         if(block):
-            self.redo_main.log("REDO [%s]: Waiting for thread to th pid %s terminate..." % (self.name,pid))
+            self.log("REDO [%s]: Waiting for thread to th pid %s terminate..." % (self.name,pid))
             ssh_thread.join(timeout)                       
             if ssh_thread.isAlive():
-                self.redo_main.log("REDO [%s]: Killing thread running pid \"%s\" after timeout..." % (self.name, pid))
+                self.log("REDO [%s]: Killing thread running pid \"%s\" after timeout..." % (self.name, pid))
                 ssh_thread.kill_subproc()
-                self.redo_main.log("REDO [%s]: Waiting for thread to die..." % (self.name))
+                self.log("REDO [%s]: Waiting for thread to die..." % (self.name))
                 ssh_thread.join()
-                self.redo_main.log("REDO [%s]: Thread and process is dead" % (self.name))
+                self.log("REDO [%s]: Thread and process is dead" % (self.name))
             else:
-                None
-                self.redo_main.log("REDO [%s]: Thread with pid %s just terminated" % (self.name,pid))
+                self.log("REDO [%s]: Thread with pid %s just terminated" % (self.name,pid))
+                #None
                 
         return pid
 
@@ -188,34 +212,34 @@ class Host:
     def wait(self, pid, timeout=None, kill=False):
         procthread = self.pid2thread[pid]
         #Wait for the thread to start up if it hasn't
-        self.log("REDO [MAIN]: Waiting for thread with pid \"%s\" to terminate..." % (pid))
+        self.log("REDO [%s]: Waiting for thread with pid \"%s\" to terminate..." % (self.name,pid))
         procthread.join(timeout)                       
         if procthread.isAlive():
             if not kill:
                 return None #Timedout, and not going to kill
 
-            self.log("REDO [MAIN]: Killing pid \"%s\" after timeout..." % (pid))
+            #self.log("REDO [%s]: Killing pid \"%s\" after timeout..." % (self.name,pid))
             procthread.kill_subproc()
-            self.log("REDO [MAIN]: Waiting for thread running pid \"%s\" to die..." % (pid))
+            #self.log("REDO [%s]: Waiting for thread running pid \"%s\" to die..." % (self.name,pid))
             procthread.join()
-            self.log("REDO [MAIN]: Thread and running pid \"%s\" is dead" % (pid))
+            #self.log("REDO [%s]: Thread and running pid \"%s\" is dead" % (self.name,pid))
         
-        if procthread.subproc.returncode: 
-            self.log("REDO [MAIN]: Process with pid \"%s\" terminated with return code \"%i\" ..." % (pid,procthread.subproc.returncode))
+        if procthread.subproc.returncode is not None: 
+            self.log("REDO [%s]: Process with pid \"%s\" terminated with return code \"%i\" ..." % (self.name,pid,procthread.subproc.returncode))
         else:
-            self.log("REDO [MAIN]: Process with pid \"%s\" has not yet terminated ..." % (pid))
+            self.log("REDO [%s]: Process with pid \"%s\" has not yet terminated ..." % (self.name,pid))
         
         return procthread.subproc.returncode
 
 
     #Stop the remote process by sending a signal
     def kill(self,pid):
-        self.redo_main.log("REDO [%s]: Killing thread with pid \"%s\" " % (self.name, pid))
+        self.log("REDO [%s]: Killing thread with pid \"%s\" " % (self.name, pid))
         proc = self.pid2thread[pid]
         proc.kill_subproc()
-        self.redo_main.log("REDO [%s]: Waiting for thread to exit.." %(self.name))
+        self.log("REDO [%s]: Waiting for thread to exit.." %(self.name))
         proc.join()
-        self.redo_main.log("REDO [%s}: Thread has exited.." %(self.name))
+        self.log("REDO [%s]: Thread has exited.." %(self.name))
         return proc.subproc.returncode
         
 
@@ -255,11 +279,11 @@ class Host:
         for pid in self.pid2thread:
             procthread = pid2thread[pid]
             if procthread.isAlive():
-                self.redo_main.log("REDO [%s]: Killing thread in destructor..." % (self.name))
+                #self.redo_main.log("REDO [%s]: Killing thread in destructor..." % (self.name))
                 peocthread.kill_subproc() 
-                self.redo_main.log("REDO [%s]: Waiting for thread to die..." % (self.name))
+                #self.redo_main.log("REDO [%s]: Waiting for thread to die..." % (self.name))
                 procthread.join()
-                self.redo_main.log("REDO [%s]: Thread is dead" % (self.main))
+                #self.redo_main.log("REDO [%s]: Thread is dead" % (self.main))
          
 
 #Operate on a list of hosts
@@ -276,7 +300,6 @@ class Hosts:
         #This one is special, we want things to run in parallell. So we don't pass the blocking through
         pids = map( (lambda host: host.run(cmd,timeout,False,pincpu,realtime,returnout,tostdout)), self.hostlist)
         if block == True:
-            print "Waiting on pid %s" % (pids)
             self.wait(pids,timeout=None)
 
         return pids
@@ -293,6 +316,7 @@ class Hosts:
         return map( (lambda (host,pid): host.getoutput(pid,block,timeout)), zip(self.hostlist,pids))
 
     #Wait on a command on a remote host finishing
+    #Bug or feautre this waits for timeout seconds on all pids. Which is potentially much bigger than timeout...
     def wait(self,pids, timeout=None, kill=False):
         return map( (lambda (host,pid): host.wait(pid,timeout,kill)), zip(self.hostlist,pids))
 
@@ -377,17 +401,18 @@ class Redo:
         os.chdir(self.workdir)
 
         if logging:
-            self.logfilename  = self.workdir + "/redo_%s.log" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
-            self.logfile      = open(self.logfilename,"w")
+            self.logfilename  = self.workdir + "/redo_%s" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f"))
+            self.logfile      = open(self.logfilename + ".log","w")
 
         #Make a list of empy host structures
         if type(hostnames) != list:
             hostnames = [hostnames]
 
+        init = True
         if type(unames) == list:            
-            self.hostlist = [ Host(self,host,uname) for host,uname in zip(hostnames,unames) ]
+            self.hostlist = [ Host(self,host,uname, logging, init, self.logfilename) for host,uname in zip(hostnames,unames) ]
         else:
-            self.hostlist = [ Host(self,host,unames) for host in hostnames ]
+            self.hostlist = [ Host(self,host,unames, logging, init, self.logfilename) for host in hostnames ]
 
 
     #Get a range of hosts
@@ -467,7 +492,7 @@ class Redo:
     #Wait on a command on a remote host finishing
     def wait(self,pids, timeout=None, kill=False):
         hosts = Hosts(self.hostlist)
-        return host.wait(pids,timeout,kill)
+        return hosts.wait(pids,timeout,kill)
 
     #Stop the remote process by sending a signal
     def kill(self,pids):
@@ -530,28 +555,6 @@ class Redo:
                 
         return pid
 
-    #(optionaly) Make pretty logs of everything that we do
-    def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
-
-        timestr = ""
-        if timestamp:
-            timestr += datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f ")        
-
-        footer = ""
-        if len(msg) > 0 and msg[-1] != "\n":
-            footer = "\n"
-            
-        msg = "%s%s%s" % (timestr, msg,footer)
-
-        if self.logging:
-            self.logfile.write(msg)
-        
-        if tostdout:
-            sys.stdout.write(msg)
-
-        if tostderr:
-            sys.stderr.write(msg)
-
     def local_getoutput(self,pid, block=False, timeout=None):
         results_q = self.pid2thread[pid].result
         if results_q.empty():
@@ -594,4 +597,8 @@ class Redo:
 
     def local_cd(self,path):
         os.chdir(path)
+
+    def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
+        log(self.logfile,msg,tostdout,tostderr,timestamp)
+
 
