@@ -53,7 +53,7 @@ Redo has a number of useful remote functionsL
 - ***sync_to()*** copy (rsync) the file or list of files to the path or list of paths to the remote boxes
 - ***scyn_from()*** copy (rsync) the file or list of files to the path or list of paths from the remote boxes
 
-### Local functions ###
+### Run local functions ###
 As part of setting up and doing remote things, you probably will want to do some local things to. 
 Redo includes the following local functions to help this. 
 - ***run_local()*** runs a command or list of commands on the local box returning a list of PIDs
@@ -63,7 +63,7 @@ Redo includes the following local functions to help this.
 - ***cd_local()*** change the working directory to the new one given
 
 
-## Full Function Descriptions ##
+## Detailed Documentation ##
 
 #### run() ####
 Runs the given command or list of commands on the remote box
