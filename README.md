@@ -46,9 +46,9 @@ Redo has a number of useful remote functions
 #### run() ####
 Runs the given command on the remote box
 ```
-run(cmd,timeout=None, block=True, pincpu=-1,realtime=False, returnout=True, tostdout=False)
+run(cmds,timeout=None, block=True, pincpu=-1,realtime=False, returnout=True, tostdout=False)
 ```
-- ***cmd*** is a shell (usually BASH) command line to run on the remote host(s)
+- ***cmds*** is either a list of or single shell (usually BASH) command line to run on the remote host(s)
 - ***timeout*** is the time in seconds that we should wait for the remote command to finish before killing it  
 - ***block*** should redo block waiting for the command to finish, or should it run these in the background. 
 - ***pincpu*** ***NOT YET IMPLEMENTED*** allows the remote command to be pinned to a specific CPU and removed all    other processes from that CPU   

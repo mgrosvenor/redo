@@ -35,6 +35,10 @@ def log(logfile,msg,tostdout=False,tostderr=False, timestamp=True):
         sys.stderr.write(msg)
 
 
+
+
+
+######################################################################################################################
 #This is a giant work around the completely brain dead subprocess stdin/stdout/communicate behaviour
 class CThread (threading.Thread):
     def __init__(self, parent, cmd, returnout, result, tostdout):
@@ -121,6 +125,13 @@ class CThread (threading.Thread):
             thread.exit()
 
 
+
+
+
+
+
+
+######################################################################################################################
 #Defines a remote host
 class Host:
     def __init__(self, redo, name,uname,logging, init, logfilename):
@@ -143,8 +154,8 @@ class Host:
         self.logfilename = logfilename + "-" + self.name
         self.logfile     = open(self.logfilename + ".log","w")
 
-        if(init):
-            self.inithost() #populate host info
+        #if(init):
+        #    self.inithost() #populate host info
    
     def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
         log(self.logfile,msg,tostdout,tostderr,timestamp)
@@ -157,8 +168,11 @@ class Host:
     def cd(self,path):
         self.workdir = path
     
-    def inithost(self):
-        self.run("mkdir -p %s" % (self.redo_main.workdir))
+    #This is in the wrong place and does the wrong thing. Beacuse it's blocking, it forces 
+    #everyone to wait to do the thing that has probably already been done, except when it hasnt. 
+    #going to turn it off for the moment, but there does need to be an init phase at somepoint
+    #def inithost(self):
+    #    self.run("mkdir -p %s" % (self.redo_main.workdir))
 
 
     #Run a command on a remote host return a pid for the command
@@ -171,7 +185,7 @@ class Host:
         escaped = escaped.replace("$","\$")
         if timeout > 0 and not block:
             escaped = "timeout %i %s" % (timeout,escaped)
-        workdir_cmd = "cd %s; %s" % (self.workdir,escaped)
+        workdir_cmd = "mkdir -p %s && cd %s; %s" % (self.workdir, self.workdir,escaped)
         ssh_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,workdir_cmd)  
         pid = self.makepid()
         self.log("REDO [%s] Running ssh command \"%s\" with pid %s" % (self.name,ssh_cmd,pid), tostdout=tostdout)
@@ -276,13 +290,13 @@ class Host:
     
     #Copy data to the remote host with scp
     def copy_to(self,src,dst,block=True,timeout=None,returnout=True,tostdout=False):
-        scp_cmd = "scp -rv %s %s@%s:%s" %(src,self.uname,self.name,dst)  
+        scp_cmd = "scp -r %s %s@%s:%s" %(src,self.uname,self.name,dst)  
         return self.docopy(scp_cmd,block,timeout,returnout,tostdout)
 
 
     #Copy data from the remote host with scp
     def copy_from(self,src,dst,block=True,timeout=None,returnout=True,tostdout=False):
-        scp_cmd = "scp -rv %s@%s:%s %s" %(self.uname,self.name,src,dst)  
+        scp_cmd = "scp -r %s@%s:%s %s" %(self.uname,self.name,src,dst)  
         return self.docopy(scp_cmd,block,timeout,returnout,tostdout)
 
     #Use rysnc to minimise copying
@@ -319,7 +333,16 @@ class Host:
                 #self.redo_main.log("REDO [%s]: Thread is dead" % (self.main))
          
 
+
+
+
+
+
+
+######################################################################################################################
 #Operate on a list of hosts
+#Expose the same interface as a single host, take lists of arguments whereever sensible
+#This is syntactic sugar over map, but useful to minimize code overhead in derivitve apps
 class Hosts:
     def __init__(self,hostlist):
         self.hostlist = hostlist
@@ -329,9 +352,12 @@ class Hosts:
     #timeout:   Time in seconds to wait for the command to run, otherwise kill it
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
-    def run(self, cmd, timeout=None, block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+    def run(self, cmds, timeout=None, block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+        if type(cmds) is not list:
+            cmds = [cmds] * len(self.hostlist)
+
         #This one is special, we want things to run in parallell. So we don't pass the blocking through
-        pids = map( (lambda host: host.run(cmd,timeout,False,pincpu,realtime,returnout,tostdout)), self.hostlist)
+        pids = map( (lambda (cmd,host): host.run(cmd,timeout,False,pincpu,realtime,returnout,tostdout)), zip(cmds,self.hostlist))
         if block == True:
             self.wait(pids,timeout=None)
 
@@ -431,12 +457,6 @@ class Hosts:
 
 
 
-
-
-
-
-
-
 ######################################################################################################################
 class Redo:
     def __init__(self, hostnames, unames, workdir="/tmp/redo/",logging=True):
@@ -463,6 +483,7 @@ class Redo:
         else:
             self.hostlist = [ Host(self,host,unames, logging, init, self.logfilename) for host in hostnames ]
 
+        self.hosts = Hosts(self.hostlist)
 
     #Get a range of hosts
     def gethosts(self, start, stop):
@@ -472,8 +493,8 @@ class Redo:
         for host in self.hostlist:
             if host.name == start:
                 first = True
-                if start == stop:
-                    return host
+                #if start == stop:
+                    #return host
 
             if first:
                 result.append(host)
@@ -526,44 +547,35 @@ class Redo:
     #timeout:   Time in seconds to wait for the command to run, otherwise kill it
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
-    def run(self, cmd, timeout=None,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)
+    def run(self, cmds, timeout=None,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+        return self.hosts.run(cmds,timeout,block,pincpu,realtime,returnout,tostdout)
         
     def cd(self,path):
-        hosts = Hosts(self.hostlist)        
-        return hosts.cd(path)
+        return self.hosts.cd(path)
 
     def getoutput(self,pid, block=False, timeout=None):
-        hosts = Hosts(self.hostlist)
-        return hosts.getoutput(pid,block,timeout)
+        return self.hosts.getoutput(pid,block,timeout)
 
     #Wait on a command on a remote host finishing
     def wait(self,pids, timeout=None, kill=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.wait(pids,timeout,kill)
+        return self.hosts.wait(pids,timeout,kill)
 
     #Stop the remote process by sending a signal
     def kill(self,pids):
-        hosts = Hosts(self.hostlist)
-        return hosts.kill(pids)
+        return self.hosts.kill(pids)
          
     #Copy data to the remote host with scp
     def copy_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.copy_to(srcs,dsts,block,timeout,returnout,tostdout)
+        return self.hosts.copy_to(srcs,dsts,block,timeout,returnout,tostdout)
 
     def copy_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.copy_from(srcs,dsts,block,timeout,returnout,tostdout)
+        return self.hosts.copy_from(srcs,dsts,block,timeout,returnout,tostdout)
 
     def sync_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.sync_to(srcs,dsts,block,timeout,returnout,tostdout)
+        return self.hosts.sync_to(srcs,dsts,block,timeout,returnout,tostdout)
 
     def sync_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.sync_from(srcs,dsts,block,timeout,returnout,tostdout)
+        return self.hosts.sync_from(srcs,dsts,block,timeout,returnout,tostdout)
 
 
     def makepid(self):
