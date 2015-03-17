@@ -42,9 +42,31 @@ test2_3 = redo["test2":"test3"]
 test_all = redo[:] 
 ```
 ### Run remote functions ###
-Redo has a number of useful remote functions  
+Redo has a number of useful remote functionsL
+- ***run()*** runs a command or list of commands on a remote box returning a list of PIDs
+- ***wait()*** waits for a PID or list of PIDs to finish, returning the status code of each
+- ***kill()*** stops the execution of a PID of list of PIDs. 
+- ***getoutput()*** get the outputs produced by the PID or list of PIDs
+- ***cd()*** change the working directory to the new one given
+- ***copy_to()*** copy (scp) the file or list of files to the path or list of paths to the remote boxes
+- ***copy_from()*** copy (scp) the file or list of files to the path or list of paths from the remote boxes
+- ***sync_to()*** copy (rsync) the file or list of files to the path or list of paths to the remote boxes
+- ***scyn_from()*** copy (rsync) the file or list of files to the path or list of paths from the remote boxes
+
+### Run local functions ###
+As part of setting up and doing remote things, you probably will want to do some local things to. 
+Redo includes the following local functions to help this. 
+- ***run_local()*** runs a command or list of commands on the local box returning a list of PIDs
+- ***wait_local()*** waits for a PID to finish, returning the status code
+- ***kill_local()*** stops the execution of a PID 
+- ***getoutput_local()*** get the output produced by the PID
+- ***cd_local()*** change the working directory to the new one given
+
+
+## Detailed Documentation ##
+
 #### run() ####
-Runs the given command on the remote box
+Runs the given command or list of commands on the remote box
 ```
 run(cmds,timeout=None, block=True, pincpu=-1,realtime=False, returnout=True, tostdout=False)
 ```
@@ -95,9 +117,6 @@ getoutput() will return a list of strings as output from the remote applications
 
 
 
-### Local functions ###
-As part of setting up and doing remote things, you probably will want to do some local things to. 
-Redo includes the following local functions to help this. 
 
 
 #### local_run() ####
