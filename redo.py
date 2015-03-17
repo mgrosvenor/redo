@@ -403,7 +403,7 @@ class Hosts:
             srcs = [srcs] * len(self.hostslist)
 
         if type(dsts) is not list:
-            dsts = [srcs] * len(self.hostlist)
+            dsts = [dsts] * len(self.hostlist)
 
         pids = map( (lambda (host,src,dst): host.copy_from(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
@@ -415,10 +415,10 @@ class Hosts:
     #Use rysnc to minimise copying
     def sync_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
         if type(srcs) is not list:
-            srcs = [srcs] * len(self.hostslist)
+            srcs = [srcs] * len(self.hostlist)
 
         if type(dsts) is not list:
-            dsts = [srcs] * len(self.hostlist)
+            dsts = [dsts] * len(self.hostlist)
 
         pids = map( (lambda (host,src,dst): host.sync_to(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
@@ -429,10 +429,10 @@ class Hosts:
     #Use rsync to minimise copying 
     def sync_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
         if type(srcs) is not list:
-            srcs = [srcs] * len(self.hostslist)
+            srcs = [srcs] * len(self.hostlist)
 
         if type(dsts) is not list:
-            dsts = [srcs] * len(self.hostlist)
+            dsts = [dsts] * len(self.hostlist)
 
         pids = map( (lambda (host,src,dst): host.sync_from(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
@@ -655,7 +655,7 @@ class Redo:
         
 
     def local_cd(self,path):
-        os.chdir(path)
+        os.chdir(os.path.expanduser(path))
 
     def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
         log(self.logfile,msg,tostdout,tostderr,timestamp)
