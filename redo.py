@@ -168,6 +168,7 @@ class Host:
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
     def run(self, cmd, timeout=None,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False ):
         escaped = cmd.replace("\"","\\\"")
+        escaped = escaped.replace("$","\$")
         if timeout > 0 and not block:
             escaped = "timeout %i %s" % (timeout,escaped)
         workdir_cmd = "cd %s; %s" % (self.workdir,escaped)
