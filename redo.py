@@ -11,6 +11,7 @@ import Queue
 import fcntl
 import select
 import time
+import signal
 
 #(optionaly) Make pretty logs of everything that we do
 def log(logfile,msg,tostdout=False,tostderr=False, timestamp=True):
@@ -52,35 +53,30 @@ class CThread (threading.Thread):
         self.subproc    = None
 
     def kill_subproc(self):
-        #print "Safe kill subprocess.."
         p = self.subproc
         p.poll()
         if p.returncode is None:
-            #print "Process is alive, try kill.."
-            p.kill()
-            #print "Waiting for cleanup.."           
+            os.killpg(p.pid, signal.SIGTERM)
 
             #Give the process some time to clean up            
             timestep = 0.1 #seconds
             timeout  = 10 #seconds
             i = 0
             while(p.returncode is None and i < (timeout/timestep)):
-                (pid, err_code) = os.waitpid(p.pid, os.WNOHANG) 
+                p.poll()
                 time.sleep(timestep)
                 i += 1
             
             if p.returncode is None:
-                #print "OK, terminating.."
-                p.terminate() #see https://www.youtube.com/watch?v=Up1hGZhvjzs
+                os.killpg(p.pid, signal.SIGKILL)  #see https://www.youtube.com/watch?v=Up1hGZhvjzs
                 p.wait()                 
 
-        #print "Subprocess is (should be?) dead.."
         return p.returncode
 
     def run(self):
         usereadline = True #Python docs warn that this could break, I've never seen it but am skeptical
         usereadline = False #Python docs warn that this could break, I've never seen it but am skeptical
-        p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
         self.subproc = p
         if usereadline:
             fl = fcntl.fcntl(p.stdout, fcntl.F_GETFL)
@@ -109,7 +105,11 @@ class CThread (threading.Thread):
                         self.kill_subproc()
                         thread.exit()
                 except: #Communicate throws an exception if the subprocess dies
-                    self.kill_subproc()
+                    #Ouput our illgotten gains
+                    if stdout and stdout != "": self.parent.log(stdout, tostdout=self.tostdout)
+                    if stderr and stderr != "": self.parent.log(stderr, tostdout=self.tostdout)
+                    if stdout and self.returnout: self.result.put(stdout) 
+                    if stderr and self.returnout: self.result.put(stderr) 
                     thread.exit()
 
             #Ouput our illgotten gains
@@ -120,7 +120,6 @@ class CThread (threading.Thread):
                 
         def __del__(self):
             #Does this even work? Have never seen it happen
-            print "Got the delete signal"
             self.kill_subproc()
             thread.exit()
 
@@ -233,11 +232,11 @@ class Host:
             if not kill:
                 return None #Timedout, and not going to kill
 
-            #self.log("REDO [%s]: Killing pid \"%s\" after timeout..." % (self.name,pid))
+            self.log("REDO [%s]: Killing pid \"%s\" after timeout..." % (self.name,pid), tostdout=True)
             procthread.kill_subproc()
-            #self.log("REDO [%s]: Waiting for thread running pid \"%s\" to die..." % (self.name,pid))
+            self.log("REDO [%s]: Waiting for thread running pid \"%s\" to die..." % (self.name,pid), tostdout=True)
             procthread.join()
-            #self.log("REDO [%s]: Thread and running pid \"%s\" is dead" % (self.name,pid))
+            self.log("REDO [%s]: Thread and running pid \"%s\" is dead" % (self.name,pid), tostdout=True)
         
         if procthread.subproc.returncode is not None: 
             self.log("REDO [%s]: Process with pid \"%s\" terminated with return code \"%i\" ..." % (self.name,pid,procthread.subproc.returncode))
@@ -318,9 +317,6 @@ class Host:
     def __repr__(self):
         return "'%s'" % self.name
 
-    def debug(self):
-        print "DEBUG"
-
     def __del__(self):
         self.redo_main.log("REDO [%s]: Destroying host %s" % (self.name,self.name))
         for pid in self.pid2thread:
@@ -377,7 +373,19 @@ class Hosts:
     #Wait on a command on a remote host finishing
     #Bug or feautre this waits for timeout seconds on all pids. Which is potentially much bigger than timeout...
     def wait(self,pids, timeout=None, kill=False):
-        return map( (lambda (host,pid): host.wait(pid,timeout,kill)), zip(self.hostlist,pids))
+        #Try wating the timeout, if that works, keep doing it, but decrement the time to wait, otherwise turn off the timeout
+        if timeout is not None:
+            now = time.time()
+            exp = now + timeout
+            for (host,pid) in zip(self.hostlist,pids):
+                now = time.time()
+                if now > exp:
+                    return map( (lambda (host,pid): host.wait(pid,None,kill)), zip(self.hostlist,pids))
+        
+                left = exp - now 
+                host.wait(pid,left,kill)
+        else:
+            return map( (lambda (host,pid): host.wait(pid,timeout,kill)), zip(self.hostlist,pids))
 
     #Stop the remote process by sending a signal
     def kill(self,pids):
@@ -448,9 +456,6 @@ class Hosts:
         return unicode(str(self.hostlist))
     def __repr__(self):
         return str(self.hostlist)
-
-    def debug(self):
-        return map( (lambda host: host.debug()), self.hostlist)
 
 
 
@@ -605,9 +610,9 @@ class Redo:
             if run_thread.isAlive():
                 self.log("REDO [main]: Killing thread after timeout...")
                 run_thread.kill_subproc()
-                self.log("REDO [main]: Waiting for thread to die...")
+                #self.log("REDO [main]: Waiting for thread to die...")
                 run_thread.join()
-                self.log("REDO [main]: Thread and process is dead")
+                #self.log("REDO [main]: Thread and process is dead")
             else:
                 None
                 self.log("REDO [main]: Thread with pid %s just terminated" % (pid))
