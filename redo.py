@@ -232,11 +232,11 @@ class Host:
             if not kill:
                 return None #Timedout, and not going to kill
 
-            self.log("REDO [%s]: Killing pid \"%s\" after timeout..." % (self.name,pid), tostdout=True)
+            self.log("REDO [%s]: Killing pid \"%s\" after timeout..." % (self.name,pid))
             procthread.kill_subproc()
-            self.log("REDO [%s]: Waiting for thread running pid \"%s\" to die..." % (self.name,pid), tostdout=True)
+            #self.log("REDO [%s]: Waiting for thread running pid \"%s\" to die..." % (self.name,pid))
             procthread.join()
-            self.log("REDO [%s]: Thread and running pid \"%s\" is dead" % (self.name,pid), tostdout=True)
+            #self.log("REDO [%s]: Thread and running pid \"%s\" is dead" % (self.name,pid))
         
         if procthread.subproc.returncode is not None: 
             self.log("REDO [%s]: Process with pid \"%s\" terminated with return code \"%i\" ..." % (self.name,pid,procthread.subproc.returncode))
