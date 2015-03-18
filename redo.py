@@ -380,9 +380,11 @@ class Hosts:
             for (host,pid) in zip(self.hostlist,pids):
                 now = time.time()
                 if now > exp:
-                    return map( (lambda (host,pid): host.wait(pid,None,kill)), zip(self.hostlist,pids))
+                    #print "Time is up, no timeout anymore.."
+                    return map( (lambda (host,pid): host.wait(pid,0,kill)), zip(self.hostlist,pids))
         
                 left = exp - now 
+                #print "Waitif for %f seconds for process %s to exit..." % (left,pid)
                 host.wait(pid,left,kill)
         else:
             return map( (lambda (host,pid): host.wait(pid,timeout,kill)), zip(self.hostlist,pids))
