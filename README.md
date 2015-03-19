@@ -32,11 +32,11 @@ redo = redo.Redo(["test1","test2"], ["admin1","admin2"])
 ```
 
 ### Select hosts ###
-Redo can operate on a sinlge host, all hosts, or a selection of hosts, indexed by either host name or numberical index. eg
+Redo can operate on a sinlge host, all hosts, or a selection of hosts, indexed by either host name or numerical index. eg
 ```
 test1 = redo[0]
 test1 = redo["test1"]
-test1_2_3 = redo[0:3]
+test1_2_3 = redo[0:2]
 test1_2_3 = redo["test1":test3"] 
 test2_3 = redo["test2":"test3"]
 test_all = redo[:] 
