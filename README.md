@@ -113,9 +113,70 @@ getoutput(pids,block=False,timeout=None)
 
 getoutput() will return a list of strings as output from the remote applications. 
 
+#### copy_to() ####
+Copy a file or list of files to the remote host file or list of files using SCP.
+
+```
+copy_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False)
+```
+
+- ***srcs*** The source file/files to be coppied to the remote hosts
+- ***dsts*** The destination file/files on the remote hosts
+- ***block*** should redo block waiting for the copy to finish, or should it run these in the background. 
+- ***timeout*** is the time in seconds that we should wait for the copy to finish before killing it  
+- ***returnout*** should the copy retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the copy output be sent to standard out.    
+
+copy_to returns a list of of proces identifiers (PIDs) as with run() which can be used with wait()/kill() etc. 
+
+#### copy_from() ####
+Copy a file or list of files from the remote host to a file or list of files using SCP.
+
+```
+copy_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False)
+```
+
+- ***srcs*** The source file/files to be coppied from the remote hosts
+- ***dsts*** The destination file/files on the local host
+- ***block*** should redo block waiting for the copy to finish, or should it run these in the background. 
+- ***timeout*** is the time in seconds that we should wait for the copy to finish before killing it  
+- ***returnout*** should the copy retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the copy output be sent to standard out.    
+
+copy_from returns a list of of proces identifiers (PIDs) as with run() which can be used with wait()/kill() etc. 
 
 
+#### sync_to() ####
+Copy a file or list of files to the remote host file or list of files using rync.
 
+```
+sync_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False)
+```
+
+- ***srcs*** The source file/files to be coppied to the remote hosts
+- ***dsts*** The destination file/files on the remote hosts
+- ***block*** should redo block waiting for the copy to finish, or should it run these in the background. 
+- ***timeout*** is the time in seconds that we should wait for the copy to finish before killing it  
+- ***returnout*** should the copy retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the copy output be sent to standard out.    
+
+sync_to returns a list of of proces identifiers (PIDs) as with run() which can be used with wait()/kill() etc. 
+
+#### sync_from() ####
+Copy a file or list of files from the remote host to a file or list of files using sync.
+
+```
+sync_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False)
+```
+
+- ***srcs*** The source file/files to be coppied from the remote hosts
+- ***dsts*** The destination file/files on the local host
+- ***block*** should redo block waiting for the copy to finish, or should it run these in the background. 
+- ***timeout*** is the time in seconds that we should wait for the copy to finish before killing it  
+- ***returnout*** should the copy retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the copy output be sent to standard out.    
+
+sync_from returns a list of of proces identifiers (PIDs) as with run() which can be used with wait()/kill() etc. 
 
 
 
