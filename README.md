@@ -3,10 +3,7 @@
 Sometimes you need to script things to run on a collection of remote hosts. 
 These things might be simple like installing packages, or complicated like starting up clients and servers on specific hosts, while configuring monitoring and capture systems on other hosts. 
 It's not always obvious what the right thing to is. 
-Most of the time, it get's kludged together using some spaghetti BASH/python/perl/sed scripts. 
-But then you realize that you need to log all of the output to make sure that everything is running properly. 
-And you need to script some non-trival iteration over parameters, or exit conditions. 
-Bring out more BASH and more pythong/perl/sed/grep/cut/awk/uniq scripts. 
+Most of the time, it get's kludged together using some spaghetti scripts.
 There has to be a better way. 
 Now there is, it's called "Remote Do" or redo for short. 
 
@@ -32,23 +29,45 @@ redo = redo.Redo(["test1","test2"], ["admin1","admin2"])
 ```
 
 ### Select hosts ###
-Redo can operate on a sinlge host, all hosts, or a selection of hosts, indexed by either host name or numberical index. eg
+Redo can operate on a sinlge host, all hosts, or a selection of hosts, indexed by either host name or numerical index. eg
 ```
 test1 = redo[0]
 test1 = redo["test1"]
-test1_2_3 = redo[0:3]
+test1_2_3 = redo[0:2]
 test1_2_3 = redo["test1":test3"] 
 test2_3 = redo["test2":"test3"]
 test_all = redo[:] 
 ```
 ### Run remote functions ###
-Redo has a number of useful remote functions  
+Redo has a number of useful remote functionsL
+- ***run()*** runs a command or list of commands on a remote box returning a list of PIDs
+- ***wait()*** waits for a PID or list of PIDs to finish, returning the status code of each
+- ***kill()*** stops the execution of a PID of list of PIDs. 
+- ***getoutput()*** get the outputs produced by the PID or list of PIDs
+- ***cd()*** change the working directory to the new one given
+- ***copy_to()*** copy (scp) the file or list of files to the path or list of paths to the remote boxes
+- ***copy_from()*** copy (scp) the file or list of files to the path or list of paths from the remote boxes
+- ***sync_to()*** copy (rsync) the file or list of files to the path or list of paths to the remote boxes
+- ***scyn_from()*** copy (rsync) the file or list of files to the path or list of paths from the remote boxes
+
+### Run local functions ###
+As part of setting up and doing remote things, you probably will want to do some local things to. 
+Redo includes the following local functions to help this. 
+- ***run_local()*** runs a command or list of commands on the local box returning a list of PIDs
+- ***wait_local()*** waits for a PID to finish, returning the status code
+- ***kill_local()*** stops the execution of a PID 
+- ***getoutput_local()*** get the output produced by the PID
+- ***cd_local()*** change the working directory to the new one given
+
+
+## Detailed Documentation ##
+
 #### run() ####
-Runs the given command on the remote box
+Runs the given command or list of commands on the remote box
 ```
-run(cmd,timeout=None, block=True, pincpu=-1,realtime=False, returnout=True, tostdout=False)
+run(cmds,timeout=None, block=True, pincpu=-1,realtime=False, returnout=True, tostdout=False)
 ```
-- ***cmd*** is a shell (usually BASH) command line to run on the remote host(s)
+- ***cmds*** is either a list of or single shell (usually BASH) command line to run on the remote host(s)
 - ***timeout*** is the time in seconds that we should wait for the remote command to finish before killing it  
 - ***block*** should redo block waiting for the command to finish, or should it run these in the background. 
 - ***pincpu*** ***NOT YET IMPLEMENTED*** allows the remote command to be pinned to a specific CPU and removed all    other processes from that CPU   
@@ -91,13 +110,71 @@ getoutput(pids,block=False,timeout=None)
 
 getoutput() will return a list of strings as output from the remote applications. 
 
+#### copy_to() ####
+Copy a file or list of files to the remote host file or list of files using SCP.
+
+```
+copy_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False)
+```
+
+- ***srcs*** The source file/files to be coppied to the remote hosts
+- ***dsts*** The destination file/files on the remote hosts
+- ***block*** should redo block waiting for the copy to finish, or should it run these in the background. 
+- ***timeout*** is the time in seconds that we should wait for the copy to finish before killing it  
+- ***returnout*** should the copy retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the copy output be sent to standard out.    
+
+copy_to returns a list of of proces identifiers (PIDs) as with run() which can be used with wait()/kill() etc. 
+
+#### copy_from() ####
+Copy a file or list of files from the remote host to a file or list of files using SCP.
+
+```
+copy_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False)
+```
+
+- ***srcs*** The source file/files to be coppied from the remote hosts
+- ***dsts*** The destination file/files on the local host
+- ***block*** should redo block waiting for the copy to finish, or should it run these in the background. 
+- ***timeout*** is the time in seconds that we should wait for the copy to finish before killing it  
+- ***returnout*** should the copy retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the copy output be sent to standard out.    
+
+copy_from returns a list of of proces identifiers (PIDs) as with run() which can be used with wait()/kill() etc. 
 
 
+#### sync_to() ####
+Copy a file or list of files to the remote host file or list of files using rync.
 
+```
+sync_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False)
+```
 
-### Local functions ###
-As part of setting up and doing remote things, you probably will want to do some local things to. 
-Redo includes the following local functions to help this. 
+- ***srcs*** The source file/files to be coppied to the remote hosts
+- ***dsts*** The destination file/files on the remote hosts
+- ***block*** should redo block waiting for the copy to finish, or should it run these in the background. 
+- ***timeout*** is the time in seconds that we should wait for the copy to finish before killing it  
+- ***returnout*** should the copy retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the copy output be sent to standard out.    
+
+sync_to returns a list of of proces identifiers (PIDs) as with run() which can be used with wait()/kill() etc. 
+
+#### sync_from() ####
+Copy a file or list of files from the remote host to a file or list of files using sync.
+
+```
+sync_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False)
+```
+
+- ***srcs*** The source file/files to be coppied from the remote hosts
+- ***dsts*** The destination file/files on the local host
+- ***block*** should redo block waiting for the copy to finish, or should it run these in the background. 
+- ***timeout*** is the time in seconds that we should wait for the copy to finish before killing it  
+- ***returnout*** should the copy retun its output to the controller progrem, or just ignore it.   
+- ***tostdout*** should the copy output be sent to standard out.    
+
+sync_from returns a list of of proces identifiers (PIDs) as with run() which can be used with wait()/kill() etc. 
+
 
 
 #### local_run() ####

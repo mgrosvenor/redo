@@ -11,6 +11,7 @@ import Queue
 import fcntl
 import select
 import time
+import signal
 
 #(optionaly) Make pretty logs of everything that we do
 def log(logfile,msg,tostdout=False,tostderr=False, timestamp=True):
@@ -35,6 +36,10 @@ def log(logfile,msg,tostdout=False,tostderr=False, timestamp=True):
         sys.stderr.write(msg)
 
 
+
+
+
+######################################################################################################################
 #This is a giant work around the completely brain dead subprocess stdin/stdout/communicate behaviour
 class CThread (threading.Thread):
     def __init__(self, parent, cmd, returnout, result, tostdout):
@@ -48,35 +53,30 @@ class CThread (threading.Thread):
         self.subproc    = None
 
     def kill_subproc(self):
-        #print "Safe kill subprocess.."
         p = self.subproc
         p.poll()
         if p.returncode is None:
-            #print "Process is alive, try kill.."
-            p.kill()
-            #print "Waiting for cleanup.."           
+            os.killpg(p.pid, signal.SIGTERM)
 
             #Give the process some time to clean up            
             timestep = 0.1 #seconds
             timeout  = 10 #seconds
             i = 0
             while(p.returncode is None and i < (timeout/timestep)):
-                (pid, err_code) = os.waitpid(p.pid, os.WNOHANG) 
+                p.poll()
                 time.sleep(timestep)
                 i += 1
             
             if p.returncode is None:
-                #print "OK, terminating.."
-                p.terminate() #see https://www.youtube.com/watch?v=Up1hGZhvjzs
+                os.killpg(p.pid, signal.SIGKILL)  #see https://www.youtube.com/watch?v=Up1hGZhvjzs
                 p.wait()                 
 
-        #print "Subprocess is (should be?) dead.."
         return p.returncode
 
     def run(self):
         usereadline = True #Python docs warn that this could break, I've never seen it but am skeptical
         usereadline = False #Python docs warn that this could break, I've never seen it but am skeptical
-        p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
         self.subproc = p
         if usereadline:
             fl = fcntl.fcntl(p.stdout, fcntl.F_GETFL)
@@ -105,7 +105,11 @@ class CThread (threading.Thread):
                         self.kill_subproc()
                         thread.exit()
                 except: #Communicate throws an exception if the subprocess dies
-                    self.kill_subproc()
+                    #Ouput our illgotten gains
+                    if stdout and stdout != "": self.parent.log(stdout, tostdout=self.tostdout)
+                    if stderr and stderr != "": self.parent.log(stderr, tostdout=self.tostdout)
+                    if stdout and self.returnout: self.result.put(stdout) 
+                    if stderr and self.returnout: self.result.put(stderr) 
                     thread.exit()
 
             #Ouput our illgotten gains
@@ -116,11 +120,17 @@ class CThread (threading.Thread):
                 
         def __del__(self):
             #Does this even work? Have never seen it happen
-            print "Got the delete signal"
             self.kill_subproc()
             thread.exit()
 
 
+
+
+
+
+
+
+######################################################################################################################
 #Defines a remote host
 class Host:
     def __init__(self, redo, name,uname,logging, init, logfilename):
@@ -143,8 +153,8 @@ class Host:
         self.logfilename = logfilename + "-" + self.name
         self.logfile     = open(self.logfilename + ".log","w")
 
-        if(init):
-            self.inithost() #populate host info
+        #if(init):
+        #    self.inithost() #populate host info
    
     def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
         log(self.logfile,msg,tostdout,tostderr,timestamp)
@@ -157,8 +167,11 @@ class Host:
     def cd(self,path):
         self.workdir = path
     
-    def inithost(self):
-        self.run("mkdir -p %s" % (self.redo_main.workdir))
+    #This is in the wrong place and does the wrong thing. Beacuse it's blocking, it forces 
+    #everyone to wait to do the thing that has probably already been done, except when it hasnt. 
+    #going to turn it off for the moment, but there does need to be an init phase at somepoint
+    #def inithost(self):
+    #    self.run("mkdir -p %s" % (self.redo_main.workdir))
 
 
     #Run a command on a remote host return a pid for the command
@@ -168,9 +181,10 @@ class Host:
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
     def run(self, cmd, timeout=None,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False ):
         escaped = cmd.replace("\"","\\\"")
+        escaped = escaped.replace("$","\$")
         if timeout > 0 and not block:
             escaped = "timeout %i %s" % (timeout,escaped)
-        workdir_cmd = "cd %s; %s" % (self.workdir,escaped)
+        workdir_cmd = "mkdir -p %s && cd %s; %s" % (self.workdir, self.workdir,escaped)
         ssh_cmd = "ssh %s@%s \"%s\"" %(self.uname,self.name,workdir_cmd)  
         pid = self.makepid()
         self.log("REDO [%s] Running ssh command \"%s\" with pid %s" % (self.name,ssh_cmd,pid), tostdout=tostdout)
@@ -218,7 +232,7 @@ class Host:
             if not kill:
                 return None #Timedout, and not going to kill
 
-            #self.log("REDO [%s]: Killing pid \"%s\" after timeout..." % (self.name,pid))
+            self.log("REDO [%s]: Killing pid \"%s\" after timeout..." % (self.name,pid))
             procthread.kill_subproc()
             #self.log("REDO [%s]: Waiting for thread running pid \"%s\" to die..." % (self.name,pid))
             procthread.join()
@@ -275,13 +289,13 @@ class Host:
     
     #Copy data to the remote host with scp
     def copy_to(self,src,dst,timeout=None,block=True,returnout=True,tostdout=False):
-        scp_cmd = "scp -rv %s %s@%s:%s" %(src,self.uname,self.name,dst)  
+        scp_cmd = "scp -r %s %s@%s:%s" %(src,self.uname,self.name,dst)  
         return self.docopy(scp_cmd,block,timeout,returnout,tostdout)
 
 
     #Copy data from the remote host with scp
     def copy_from(self,src,dst,timeout=None,block=True,returnout=True,tostdout=False):
-        scp_cmd = "scp -rv %s@%s:%s %s" %(self.uname,self.name,src,dst)  
+        scp_cmd = "scp -r %s@%s:%s %s" %(self.uname,self.name,src,dst)  
         return self.docopy(scp_cmd,block,timeout,returnout,tostdout)
 
     #Use rysnc to minimise copying
@@ -303,9 +317,6 @@ class Host:
     def __repr__(self):
         return "'%s'" % self.name
 
-    def debug(self):
-        print "DEBUG"
-
     def __del__(self):
         self.redo_main.log("REDO [%s]: Destroying host %s" % (self.name,self.name))
         for pid in self.pid2thread:
@@ -318,7 +329,16 @@ class Host:
                 #self.redo_main.log("REDO [%s]: Thread is dead" % (self.main))
          
 
+
+
+
+
+
+
+######################################################################################################################
 #Operate on a list of hosts
+#Expose the same interface as a single host, take lists of arguments whereever sensible
+#This is syntactic sugar over map, but useful to minimize code overhead in derivitve apps
 class Hosts:
     def __init__(self,hostlist):
         self.hostlist = hostlist
@@ -328,9 +348,12 @@ class Hosts:
     #timeout:   Time in seconds to wait for the command to run, otherwise kill it
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
-    def run(self, cmd, timeout=None, block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+    def run(self, cmds, timeout=None, block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+        if type(cmds) is not list:
+            cmds = [cmds] * len(self.hostlist)
+
         #This one is special, we want things to run in parallell. So we don't pass the blocking through
-        pids = map( (lambda host: host.run(cmd,timeout,False,pincpu,realtime,returnout,tostdout)), self.hostlist)
+        pids = map( (lambda (cmd,host): host.run(cmd,timeout,False,pincpu,realtime,returnout,tostdout)), zip(cmds,self.hostlist))
         if block == True:
             self.wait(pids,timeout=None)
 
@@ -350,7 +373,24 @@ class Hosts:
     #Wait on a command on a remote host finishing
     #Bug or feautre this waits for timeout seconds on all pids. Which is potentially much bigger than timeout...
     def wait(self,pids, timeout=None, kill=False):
-        return map( (lambda (host,pid): host.wait(pid,timeout,kill)), zip(self.hostlist,pids))
+        #Try wating the timeout, if that works, keep doing it, but decrement the time to wait, otherwise turn off the timeout
+        if timeout is not None:
+            now = time.time()
+            exp = now + timeout
+            for (host,pid) in zip(self.hostlist,pids):
+                now = time.time()
+                if now > exp:
+                    print "Time is up, no timeout anymore.."
+                    return map( (lambda (host,pid): host.wait(pid,0,kill)), zip(self.hostlist,pids))
+        
+                left = exp - now 
+                print "Waiting for %f seconds for process %s to exit..." % (left,pid)
+                host.wait(pid,left,kill)
+            
+            print "All hosts exited, returning results..."
+            return map( (lambda (host,pid): host.wait(pid,0,kill)), zip(self.hostlist,pids))
+        else:
+            return map( (lambda (host,pid): host.wait(pid,timeout,kill)), zip(self.hostlist,pids))
 
     #Stop the remote process by sending a signal
     def kill(self,pids):
@@ -376,7 +416,7 @@ class Hosts:
             srcs = [srcs] * len(self.hostslist)
 
         if type(dsts) is not list:
-            dsts = [srcs] * len(self.hostlist)
+            dsts = [dsts] * len(self.hostlist)
 
         pids = map( (lambda (host,src,dst): host.copy_from(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
@@ -388,10 +428,10 @@ class Hosts:
     #Use rysnc to minimise copying
     def sync_to(self,srcs,dsts,timeout=None,block=True,returnout=True,tostdout=False):
         if type(srcs) is not list:
-            srcs = [srcs] * len(self.hostslist)
+            srcs = [srcs] * len(self.hostlist)
 
         if type(dsts) is not list:
-            dsts = [srcs] * len(self.hostlist)
+            dsts = [dsts] * len(self.hostlist)
 
         pids = map( (lambda (host,src,dst): host.sync_to(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
@@ -402,10 +442,10 @@ class Hosts:
     #Use rsync to minimise copying 
     def sync_from(self,srcs,dsts,timeout=None,block=True,returnout=True,tostdout=False):
         if type(srcs) is not list:
-            srcs = [srcs] * len(self.hostslist)
+            srcs = [srcs] * len(self.hostlist)
 
         if type(dsts) is not list:
-            dsts = [srcs] * len(self.hostlist)
+            dsts = [dsts] * len(self.hostlist)
 
         pids = map( (lambda (host,src,dst): host.sync_from(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
@@ -421,15 +461,6 @@ class Hosts:
         return unicode(str(self.hostlist))
     def __repr__(self):
         return str(self.hostlist)
-
-    def debug(self):
-        return map( (lambda host: host.debug()), self.hostlist)
-
-
-
-
-
-
 
 
 
@@ -462,6 +493,7 @@ class Redo:
         else:
             self.hostlist = [ Host(self,host,unames, logging, init, self.logfilename) for host in hostnames ]
 
+        self.hosts = Hosts(self.hostlist)
 
     #Get a range of hosts
     def gethosts(self, start, stop):
@@ -471,8 +503,8 @@ class Redo:
         for host in self.hostlist:
             if host.name == start:
                 first = True
-                if start == stop:
-                    return host
+                #if start == stop:
+                    #return host
 
             if first:
                 result.append(host)
@@ -525,29 +557,25 @@ class Redo:
     #timeout:   Time in seconds to wait for the command to run, otherwise kill it
     #blocking:  Wait for the the command to finish before continuing. Either wait infinitely, or timeout seconds
     #pincpu:    Pin the command to a single CPU and run it as realtime prioirty
-    def run(self, cmd, timeout=None,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.run(cmd,timeout,block,pincpu,realtime,returnout,tostdout)
+    def run(self, cmds, timeout=None,block=True, pincpu=-1, realtime=False, returnout=True, tostdout=False):
+        return self.hosts.run(cmds,timeout,block,pincpu,realtime,returnout,tostdout)
         
     def cd(self,path):
-        hosts = Hosts(self.hostlist)        
-        return hosts.cd(path)
+        return self.hosts.cd(path)
 
     def getoutput(self,pid, block=False, timeout=None):
-        hosts = Hosts(self.hostlist)
-        return hosts.getoutput(pid,block,timeout)
+        return self.hosts.getoutput(pid,block,timeout)
 
     #Wait on a command on a remote host finishing
     def wait(self,pids, timeout=None, kill=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.wait(pids,timeout,kill)
+        return self.hosts.wait(pids,timeout,kill)
 
     #Stop the remote process by sending a signal
     def kill(self,pids):
-        hosts = Hosts(self.hostlist)
-        return hosts.kill(pids)
+        return self.hosts.kill(pids)
          
     #Copy data to the remote host with scp
+<<<<<<< HEAD
     def copy_to(self,srcs,dsts,timeout=None,block=True,returnout=True,tostdout=False):
         hosts = Hosts(self.hostlist)
         return hosts.copy_to(srcs,dsts,block,timeout,returnout,tostdout)
@@ -563,6 +591,19 @@ class Redo:
     def sync_from(self,srcs,dsts,timeout=None,block=True,returnout=True,tostdout=False):
         hosts = Hosts(self.hostlist)
         return hosts.sync_from(srcs,dsts,block,timeout,returnout,tostdout)
+=======
+    def copy_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
+        return self.hosts.copy_to(srcs,dsts,block,timeout,returnout,tostdout)
+
+    def copy_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
+        return self.hosts.copy_from(srcs,dsts,block,timeout,returnout,tostdout)
+
+    def sync_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
+        return self.hosts.sync_to(srcs,dsts,block,timeout,returnout,tostdout)
+
+    def sync_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
+        return self.hosts.sync_from(srcs,dsts,block,timeout,returnout,tostdout)
+>>>>>>> 224a37f7cde2d76aaccf123a70db96393dcfb8ce
 
 
     def makepid(self):
@@ -592,9 +633,9 @@ class Redo:
             if run_thread.isAlive():
                 self.log("REDO [main]: Killing thread after timeout...")
                 run_thread.kill_subproc()
-                self.log("REDO [main]: Waiting for thread to die...")
+                #self.log("REDO [main]: Waiting for thread to die...")
                 run_thread.join()
-                self.log("REDO [main]: Thread and process is dead")
+                #self.log("REDO [main]: Thread and process is dead")
             else:
                 None
                 self.log("REDO [main]: Thread with pid %s just terminated" % (pid))
@@ -642,7 +683,7 @@ class Redo:
         
 
     def local_cd(self,path):
-        os.chdir(path)
+        os.chdir(os.path.expanduser(path))
 
     def log(self,msg,tostdout=False,tostderr=False, timestamp=True):
         log(self.logfile,msg,tostdout,tostderr,timestamp)
