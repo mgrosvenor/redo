@@ -3,10 +3,7 @@
 Sometimes you need to script things to run on a collection of remote hosts. 
 These things might be simple like installing packages, or complicated like starting up clients and servers on specific hosts, while configuring monitoring and capture systems on other hosts. 
 It's not always obvious what the right thing to is. 
-Most of the time, it get's kludged together using some spaghetti BASH/python/perl/sed scripts. 
-But then you realize that you need to log all of the output to make sure that everything is running properly. 
-And you need to script some non-trival iteration over parameters, or exit conditions. 
-Bring out more BASH and more pythong/perl/sed/grep/cut/awk/uniq scripts. 
+Most of the time, it get's kludged together using some spaghetti scripts.
 There has to be a better way. 
 Now there is, it's called "Remote Do" or redo for short. 
 
