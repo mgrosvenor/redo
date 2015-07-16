@@ -257,7 +257,7 @@ class Host:
         return proc.subproc.returncode
         
 
-    def docopy(self,copy_cmd,block,timeout,returnout,tostdout):
+    def docopy(self,copy_cmd,timeout,block,returnout,tostdout):
         pid = self.makepid()
         self.log("REDO [%s] - Running copy command \"%s\" with pid %s" % (self.name,copy_cmd,pid), tostdout=tostdout)
         result = Queue.Queue()
@@ -290,23 +290,23 @@ class Host:
     #Copy data to the remote host with scp
     def copy_to(self,src,dst,timeout=None,block=True,returnout=True,tostdout=False):
         scp_cmd = "scp -r %s %s@%s:%s" %(src,self.uname,self.name,dst)  
-        return self.docopy(scp_cmd,block,timeout,returnout,tostdout)
+        return self.docopy(scp_cmd,timeout,block,returnout,tostdout)
 
 
     #Copy data from the remote host with scp
     def copy_from(self,src,dst,timeout=None,block=True,returnout=True,tostdout=False):
         scp_cmd = "scp -r %s@%s:%s %s" %(self.uname,self.name,src,dst)  
-        return self.docopy(scp_cmd,block,timeout,returnout,tostdout)
+        return self.docopy(scp_cmd,timeout,block,returnout,tostdout)
 
     #Use rysnc to minimise copying
     def sync_to(self, src, dst,timeout=None,block=True,returnout=True,tostdout=False):
         sync_cmd = "rsync -rv %s %s@%s:%s" %(src,self.uname,self.name,dst)  
-        return self.docopy(sync_cmd,block,timeout,returnout,tostdout)
+        return self.docopy(sync_cmd,timeout,block,returnout,tostdout)
 
     #Use rsync to minimise copying 
     def sync_from(self,src,dst,timeout=None,block=True,returnout=True,tostdout=False):
         sync_cmd = "rsync -rv %s@%s:%s %s" %(self.uname,self.name,src,dst)  
-        return self.docopy(sync_cmd,block,timeout,returnout,tostdout)
+        return self.docopy(sync_cmd,timeout,block,returnout,tostdout)
 
 
     #Nice string representation    
@@ -404,7 +404,7 @@ class Hosts:
         if type(dsts) is not list:
             dsts = [dsts] * len(self.hostlist)
 
-        pids = map( (lambda (host,src,dst): host.copy_to(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
+        pids = map( (lambda (host,src,dst): host.copy_to(src,dst,timeout,False,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
             self.wait(pids,timeout=None)
 
@@ -418,7 +418,7 @@ class Hosts:
         if type(dsts) is not list:
             dsts = [dsts] * len(self.hostlist)
 
-        pids = map( (lambda (host,src,dst): host.copy_from(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
+        pids = map( (lambda (host,src,dst): host.copy_from(src,dst,timeout,False,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
             self.wait(pids,timeout=None)
 
@@ -433,7 +433,7 @@ class Hosts:
         if type(dsts) is not list:
             dsts = [dsts] * len(self.hostlist)
 
-        pids = map( (lambda (host,src,dst): host.sync_to(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
+        pids = map( (lambda (host,src,dst): host.sync_to(src,dst,timeout,False,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
             self.wait(pids,timeout=None)
 
@@ -447,7 +447,7 @@ class Hosts:
         if type(dsts) is not list:
             dsts = [dsts] * len(self.hostlist)
 
-        pids = map( (lambda (host,src,dst): host.sync_from(src,dst,False,timeout,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
+        pids = map( (lambda (host,src,dst): host.sync_from(src,dst,timeout,False,returnout,tostdout)), zip(self.hostlist,srcs, dsts))
         if block:
             self.wait(pids,timeout=None)
 
@@ -575,35 +575,17 @@ class Redo:
         return self.hosts.kill(pids)
          
     #Copy data to the remote host with scp
-<<<<<<< HEAD
     def copy_to(self,srcs,dsts,timeout=None,block=True,returnout=True,tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.copy_to(srcs,dsts,block,timeout,returnout,tostdout)
+        return self.hosts.copy_to(srcs,dsts,timeout,block,returnout,tostdout)
 
     def copy_from(self,srcs,dsts,timeout=None,block=True,returnout=True,tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.copy_from(srcs,dsts,block,timeout,returnout,tostdout)
+        return self.hosts.copy_from(srcs,dsts,timeout,block,returnout,tostdout)
 
     def sync_to(self,srcs,dsts,timeout=None,block=True,returnout=True,tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.sync_to(srcs,dsts,block,timeout,returnout,tostdout)
+        return self.hosts.sync_to(srcs,dsts,timeout,block,returnout,tostdout)
 
     def sync_from(self,srcs,dsts,timeout=None,block=True,returnout=True,tostdout=False):
-        hosts = Hosts(self.hostlist)
-        return hosts.sync_from(srcs,dsts,block,timeout,returnout,tostdout)
-=======
-    def copy_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
-        return self.hosts.copy_to(srcs,dsts,block,timeout,returnout,tostdout)
-
-    def copy_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
-        return self.hosts.copy_from(srcs,dsts,block,timeout,returnout,tostdout)
-
-    def sync_to(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
-        return self.hosts.sync_to(srcs,dsts,block,timeout,returnout,tostdout)
-
-    def sync_from(self,srcs,dsts,block=True,timeout=None,returnout=True,tostdout=False):
-        return self.hosts.sync_from(srcs,dsts,block,timeout,returnout,tostdout)
->>>>>>> 224a37f7cde2d76aaccf123a70db96393dcfb8ce
+        return self.hosts.sync_from(srcs,dsts,timeout,block,returnout,tostdout)
 
 
     def makepid(self):
